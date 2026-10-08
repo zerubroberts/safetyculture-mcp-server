@@ -7,9 +7,11 @@ import { applyPii } from "../../src/exports/pii.js";
 import { filterRows, safeStem } from "../../src/exports/dataset.js";
 import { parsePeriod } from "../../src/core/time.js";
 
+const NONE = { pii: "none" } as const;
+
 describe("CSV writer", () => {
   it("quotes commas, quotes and newlines (RFC 4180)", () => {
-    const csv = toCsv([{ a: 'say "hi", ok', b: "line1\nline2", c: "plain", d: " padded " }]);
+    const csv = toCsv([{ a: 'say "hi", ok', b: "line1\nline2", c: "plain", d: " padded " }], NONE);
     expect(csv).toBe('a,b,c,d\r\n"say ""hi"", ok","line1\nline2",plain," padded "\r\n');
     expect(parseCsv(csv)).toEqual([
       ["a", "b", "c", "d"],
@@ -28,14 +30,14 @@ describe("CSV writer", () => {
     expect(cellText(null)).toBe("");
     expect(cellText("Demo Depot")).toBe("Demo Depot");
     expect(cellText({ x: [1, 2] })).toBe('{"x":[1,2]}');
-    const csv = toCsv([{ tags: ["a", "b"], meta: { k: "=1" } }]);
+    const csv = toCsv([{ tags: ["a", "b"], meta: { k: "=1" } }], NONE);
     expect(parseCsv(csv)[1]).toEqual(['["a","b"]', '{"k":"=1"}']);
   });
 
   it("writes a UTF-8 BOM file whose parsed rows match the input, columns from all rows", () => {
     const dir = mkdtempSync(join(tmpdir(), "scmcp-csv-"));
     const path = join(dir, "x.csv");
-    const n = writeCsv(path, [{ a: 1 }, { a: 2, b: "Zoë, Demo" }]);
+    const n = writeCsv(path, [{ a: 1 }, { a: 2, b: "Zoë, Demo" }], NONE);
     const text = readFileSync(path, "utf8");
     expect(text.charCodeAt(0)).toBe(0xfeff);
     expect(n).toBe(2);
