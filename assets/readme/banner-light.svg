@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="380" viewBox="0 0 1200 380" role="img" aria-labelledby="t d">
+<title id="t">SafetyCulture MCP</title>
+<desc id="d">Ask your safety data anything. 126 tools for Mitti (formerly SafetyCulture). Chart: actions opened vs closed per week for the last 12 weeks in the fictional demo organisation, 98 opened and 86 closed.</desc>
+<rect width="1200" height="380" rx="18" fill="#fafafa"/>
+<rect x="0.5" y="0.5" width="1199" height="379" rx="18" fill="none" stroke="#e3e5e8"/>
+<g font-family="'Archivo', 'Segoe UI', system-ui, -apple-system, Helvetica, Arial, sans-serif">
+  <text x="64" y="92" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="15" fill="#575c63">open-source MCP server  ·  Mitti (formerly SafetyCulture)</text>
+  <text x="62" y="176" font-size="76" font-weight="800" letter-spacing="-1.5" fill="#1b1f24">SafetyCulture</text>
+  <rect x="62" y="196" width="196" height="72" rx="4" fill="#cfee3a"/>
+  <text x="76" y="256" font-size="76" font-weight="800" letter-spacing="-1.5" fill="#1b1f24">MCP</text>
+  <text x="282" y="246" font-size="26" font-weight="600" fill="#1b1f24">Ask your safety</text>
+  <text x="282" y="278" font-size="26" font-weight="600" fill="#1b1f24">data anything.</text>
+  <text x="64" y="330" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="15" fill="#575c63">126 tools  ·  read-only by default  ·  reports, dashboards, BI exports  ·  demo mode</text>
+</g>
+<g font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
+  <text x="760" y="92" font-size="13" fill="#575c63">actions per week, demo organisation</text>
+  <rect x="760" y="104" width="10" height="10" rx="2" fill="#c9cdd2"/><text x="776" y="114" font-size="13" fill="#575c63">opened 98</text>
+  <rect x="880" y="104" width="10" height="10" rx="2" fill="#cfee3a"/><text x="896" y="114" font-size="13" fill="#575c63">closed 86</text>
+  <rect x="760.0" y="165" width="12" height="125" rx="2" fill="#c9cdd2"/><rect x="774.0" y="154" width="12" height="136" rx="2" fill="#cfee3a"/><rect x="791.7" y="245" width="12" height="45" rx="2" fill="#c9cdd2"/><rect x="805.7" y="177" width="12" height="113" rx="2" fill="#cfee3a"/><rect x="823.3" y="120" width="12" height="170" rx="2" fill="#c9cdd2"/><rect x="837.3" y="177" width="12" height="113" rx="2" fill="#cfee3a"/><rect x="855.0" y="199" width="12" height="91" rx="2" fill="#c9cdd2"/><rect x="869.0" y="211" width="12" height="79" rx="2" fill="#cfee3a"/><rect x="886.7" y="211" width="12" height="79" rx="2" fill="#c9cdd2"/><rect x="900.7" y="245" width="12" height="45" rx="2" fill="#cfee3a"/><rect x="918.3" y="222" width="12" height="68" rx="2" fill="#c9cdd2"/><rect x="932.3" y="211" width="12" height="79" rx="2" fill="#cfee3a"/><rect x="950.0" y="256" width="12" height="34" rx="2" fill="#c9cdd2"/><rect x="964.0" y="188" width="12" height="102" rx="2" fill="#cfee3a"/><rect x="981.7" y="233" width="12" height="57" rx="2" fill="#c9cdd2"/><rect x="995.7" y="222" width="12" height="68" rx="2" fill="#cfee3a"/><rect x="1013.3" y="188" width="12" height="102" rx="2" fill="#c9cdd2"/><rect x="1027.3" y="245" width="12" height="45" rx="2" fill="#cfee3a"/><rect x="1045.0" y="211" width="12" height="79" rx="2" fill="#c9cdd2"/><rect x="1059.0" y="233" width="12" height="57" rx="2" fill="#cfee3a"/><rect x="1076.7" y="143" width="12" height="147" rx="2" fill="#c9cdd2"/><rect x="1090.7" y="211" width="12" height="79" rx="2" fill="#cfee3a"/><rect x="1108.3" y="177" width="12" height="113" rx="2" fill="#c9cdd2"/><rect x="1122.3" y="233" width="12" height="57" rx="2" fill="#cfee3a"/>
+  <line x1="760" y1="290.5" x2="1140" y2="290.5" stroke="#575c63" stroke-opacity="0.5"/>
+  <text x="760" y="312" font-size="12" fill="#575c63">2026-07-20</text>
+  <text x="1140" y="312" font-size="12" text-anchor="end" fill="#575c63">2026-10-05</text>
+</g>
+</svg>

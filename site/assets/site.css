@@ -656,3 +656,11 @@ mark {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
 }
+
+/* Hosted MCP recommendation, first thing on the page */
+.hosted-note { background: var(--ink); color: var(--bg); }
+.hosted-note p { margin-block: 0; padding-block: 10px; font-size: 0.95rem; line-height: 1.45; }
+.hosted-note code { font-family: "IBM Plex Mono", ui-monospace, monospace; background: var(--hivis); color: var(--ink); padding: 0 0.3em; border-radius: 4px; overflow-wrap: anywhere; }
+.hosted-note a { color: var(--bg); text-decoration: underline; text-underline-offset: 3px; white-space: nowrap; }
+.hosted-note a:focus-visible { outline: 2px solid var(--hivis); outline-offset: 3px; }
+@media (max-width: 480px) { .hosted-note p { font-size: 0.9rem; } }

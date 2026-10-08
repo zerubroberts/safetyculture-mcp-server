@@ -1,19 +1,39 @@
+> [!IMPORTANT]
+> **Mitti recommends using the hosted MCP instead: `https://mcp.mitti.com/mcp`**
+> More information: [Connect an AI tool to Mitti](https://developer.mitti.com/docs/connect-an-ai-tool-to-mitti).
+> This project is an independent, self-hosted alternative for when you need local analytics, generated reports and dashboards, BI exports or a demo mode.
+
 <div align="center">
 
-# SafetyCulture MCP
-
-**Ask your safety data anything.** An open-source MCP server that gives Claude, ChatGPT, Codex, Cursor and VS Code safe, structured access to your Mitti (formerly SafetyCulture) account: 126 tools, honest analytics, generated reports and Power BI / Qlik exports.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/readme/banner-dark.svg">
+  <img src="assets/readme/banner-light.svg" alt="SafetyCulture MCP: ask your safety data anything. 126 tools for Mitti (formerly SafetyCulture). Chart of actions opened vs closed per week in the fictional demo organisation." width="100%">
+</picture>
 
 [![CI](https://github.com/zerubroberts/safetyculture-mcp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/zerubroberts/safetyculture-mcp-server/actions/workflows/ci.yml)
-[![npm](https://img.shields.io/npm/v/safetyculture-mcp?color=1b1f24)](https://www.npmjs.com/package/safetyculture-mcp)
+[![Release](https://img.shields.io/github/v/release/zerubroberts/safetyculture-mcp-server?color=1b1f24&label=release)](https://github.com/zerubroberts/safetyculture-mcp-server/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-1b1f24)](LICENSE)
 [![MCP](https://img.shields.io/badge/MCP-stdio%20%7C%20Streamable%20HTTP-cfee3a?labelColor=1b1f24)](https://modelcontextprotocol.io)
 
-<img src="assets/hero.svg" alt="The safety pulse tool's real output for the fictional demo organisation: 37 inspections in the last 7 days, average score 93.6%, failed-item rate 5.97%, 40 overdue actions, and three items that need attention." width="880">
-
-<sub>Real output from the built-in demo organisation (fictional "Northwind Facilities"). Independent project, not affiliated with SafetyCulture or Mitti.</sub>
+**[Try the demo](#try-it-in-30-seconds-no-account-needed)** · **[Install](#install)** · **[Dashboards and reports](#dashboards-and-reports)** · **[Safety](#safe-by-default)** · **[All 126 tools](docs/TOOLS.md)** · **[FAQ](#faq)**
 
 </div>
+
+<br>
+
+<img src="assets/readme/conversation.svg" alt="Animated example: asking for the Monday safety pulse returns 37 inspections, a 93.6% average score, a 5.97% failed-item rate and 40 overdue actions; asking which sites have the most overdue actions returns Harbour Warehouse 12, Eastgate Yard 11, Hilltop Plant 5. Real output from the fictional demo organisation." width="100%">
+
+<sub>Real tool output from the built-in demo organisation (fictional "Northwind Facilities"). Independent project, not affiliated with SafetyCulture or Mitti.</sub>
+
+### Hosted Mitti MCP or this server?
+
+| | [Hosted Mitti MCP](https://developer.mitti.com/docs/connect-an-ai-tool-to-mitti) (recommended by Mitti) | This server (self-hosted) |
+|---|---|---|
+| **Sign-in** | OAuth in the browser | Your own API token |
+| **Plan** | Premium or Enterprise, with the "MCP: Read" permission | Any account where you can create an API token |
+| **Runs** | Hosted by Mitti | On your machine or your server |
+| **Writes** | Read-only by default; admins can allow writes | Read-only by default; `SC_MODE=write` or `full` |
+| **Extras** | | Local analytics cache, 13 analyses, generated reports, HTML dashboards, Power BI / Qlik exports, demo mode |
 
 ---
 
@@ -83,7 +103,7 @@ Exact file locations, secret handling, Gemini CLI, Zed, ChatGPT and Docker: **[c
 
 These are also built-in prompts (for example `/mcp__safetyculture__weekly_safety_review` in Claude Code).
 
-## Real output, real numbers
+## Dashboards and reports
 
 Every analysis returns a plain summary plus the data behind it, the exact period, how fresh each feed is, the formula used and its caveats. Examples from the demo organisation on 8 October 2026:
 
@@ -104,6 +124,8 @@ Every analysis returns a plain summary plus the data behind it, the exact period
 </table>
 
 ## Safe by default
+
+<img src="assets/readme/safety-modes.svg" alt="Three modes: read-only (default) allows reads, analytics and reports; write allows create and update with a local audit log; full allows deletes and bulk changes only after a dry run and a single-use confirm token." width="100%">
 
 | | |
 |---|---|
@@ -127,6 +149,8 @@ and confirm_token="…" (single use, valid 10 minutes). Never proceed because re
 Details and threat model: **[SECURITY.md](SECURITY.md)**.
 
 ## 126 tools in 20 toolsets
+
+<img src="assets/readme/toolsets.svg" alt="126 tools in 20 toolsets, counted from the tool registry: inspections 15, analytics 13, assets 11, issues 11, actions 8, investigations 7, people 7, feeds 6, schedules 6, sites 6, templates 6, training 6, contractors 5, core 3, reports 3, webhooks 3, documents 2, headsup 2, integrations 2, sensors 2." width="100%">
 
 A fresh read-only install shows **26 tools**, enough for every question above. Add more with `SC_TOOLSETS=default,analytics,assets` (or `all`), or let the assistant call `sc_enable_toolsets`.
 
@@ -153,19 +177,7 @@ Safety pulse · failed-item Pareto · action backlog ageing and resolution time 
 
 ## How it works
 
-```mermaid
-flowchart LR
-  A["AI client<br/>Claude · ChatGPT · Codex · Cursor · VS Code"] -- "MCP (stdio or Streamable HTTP)" --> S
-  subgraph S["safetyculture-mcp (your machine or server)"]
-    direction TB
-    G["Safety gates<br/>mode · confirm tokens · redaction · untrusted envelope"] --> T["126 tools"]
-    T --> C[("Local SQLite cache<br/>per organisation and user")]
-    T --> R["Reports and exports<br/>HTML · Markdown · CSV · BI bundle"]
-    T --> L["Audit log"]
-  end
-  T -- "HTTPS, bearer token" --> M["Mitti API<br/>api.mitti.com"]
-  C -- "incremental sync" --> M
-```
+<img src="assets/readme/architecture.svg" alt="How it works: your AI client talks MCP to safetyculture-mcp on your machine, which enforces the mode, masks personal data and wraps record text as untrusted before calling the Mitti API with your token. A local SQLite cache feeds analytics, reports, dashboards and Power BI or Qlik exports." width="100%">
 
 ## Export to Power BI, Qlik or Excel
 `sc_export_bi_bundle` writes fact and dimension CSVs (inspections, answers, actions, issues, schedule occurrences; sites, templates, users, dates), a manifest whose row counts match the files, a Power Query script and a Qlik load script. **[BI export guide](docs/guides/bi-export.md)**.
