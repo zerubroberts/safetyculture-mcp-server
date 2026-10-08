@@ -216,7 +216,7 @@ export const feedsTools: AnyToolSpec[] = [
       const feed = args.feed as FeedName;
       const cache = await ctx.cache.ensure([feed]);
       const [status] = cache.status([feed]);
-      if (!status?.last_synced_at) throw new ToolError(`The ${feed} feed could not be synced${status?.last_error ? `: ${status.last_error}` : ""}. Run sc_sync_status.`);
+      if (!status?.last_synced_at) throw new ToolError(`The ${feed} feed could not be synced${status?.last_error ? `: ${status.last_error.replace(/\.+$/, "")}` : ""}. Run sc_sync_status.`);
       const now = ctx.now();
       const period = args.period ? parsePeriod(args.period, now) : undefined;
       const dateField = args.date_field ?? FEEDS[feed].modifiedField ?? "created_at";
