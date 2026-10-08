@@ -11,7 +11,8 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     env:
-      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      # setup-node fills NODE_AUTH_TOKEN with a placeholder, so the secret is checked under its own name.
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -31,5 +32,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
       # npm publishing runs only once the NPM_TOKEN repository secret exists.
       - name: Publish to npm
-        if: env.NODE_AUTH_TOKEN != ''
+        if: env.NPM_TOKEN != ''
         run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
