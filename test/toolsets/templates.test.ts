@@ -148,4 +148,39 @@ describe("templates toolset", () => {
     expect(ok.isError).toBe(false);
     expect(api.calls.filter((c) => c.method === "POST")).toHaveLength(1);
   });
+  it("reads past the 1,000-row search cap using modified_before windows", async () => {
+    // Synthetic: 1,200 templates, newest first, one minute apart.
+    const all = Array.from({ length: 1200 }, (_, i) => ({
+      template_id: `template_${i}`,
+      name: i === 1199 ? "Demo Oldest Audit" : `Demo Template ${i}`,
+      modified_at: new Date(Date.UTC(2026, 8, 1) - i * 60_000).toISOString(),
+      created_at: "2026-01-01T00:00:00Z",
+    }));
+    const api = new MockApi().on("GET /templates/search", (req: { query: Record<string, string> }) => {
+      const rows = req.query.modified_before ? all.filter((t) => t.modified_at < req.query.modified_before!) : all;
+      const page = rows.slice(0, Number(req.query.limit));
+      return { templates: page, count: page.length, total: rows.length };
+    });
+    const { call, json } = await connect(api);
+    const data = json((await call("sc_list_templates", { name: "oldest" })).text);
+    expect(api.calls).toHaveLength(2);
+    expect(api.calls[1]!.query.modified_before).toBe(all[999]!.modified_at);
+    expect(data.templates.map((t: { id: string }) => t.id)).toEqual(["template_1199"]);
+    expect(data.truncated).toBeUndefined();
+    const listed = json((await call("sc_list_templates", { limit: 1 })).text);
+    expect(listed.total).toBe(1200);
+  });
+
+  it("flags the list as truncated when total exceeds what could be read", async () => {
+    const rows = Array.from({ length: 1000 }, (_, i) => ({ template_id: `template_${i}`, name: `Demo Template ${i}`, modified_at: "2026-09-01T00:00:00.000Z" }));
+    const api = new MockApi().on("GET /templates/search", (req: { query: Record<string, string> }) =>
+      req.query.modified_before ? { templates: [], count: 0, total: 0 } : { templates: rows, count: 1000, total: 1500 },
+    );
+    const { call, json } = await connect(api);
+    const res = await call("sc_list_templates", { name: "nothing-matches" });
+    const data = json(res.text);
+    expect(data.total).toBe(0);
+    expect(data.truncated).toBe(true);
+    expect(res.text).toContain("Only 1000 of 1500 templates could be read");
+  });
 });

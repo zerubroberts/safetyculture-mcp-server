@@ -8,7 +8,9 @@ import { defineTool, type ToolContext } from "../core/registry.js";
  *
  * Endpoint contracts verified with `node scripts/api-ref.mjs` on 2026-10-08:
  * - list: GET /templates/search (thepubservice_searchtemplates). It has no name
- *   filter, so name search is a case-insensitive client-side substring match.
+ *   filter, so name search is a case-insensitive client-side substring match. One call
+ *   returns at most 1,000 rows plus `total`; larger organisations are read in windows by
+ *   passing the oldest modified_at seen as modified_before (see searchAllTemplates).
  * - get: GET /templates/integration/v1/templates/{id}/definition
  *   (templateservice_gettemplatedefinition): metadata plus a flat item list
  *   (label, type, parent_id) and response sets in one call.
@@ -101,6 +103,50 @@ function outlineQuestions(t: TemplateDefinition, cap: number) {
   };
 }
 
+interface TemplateRow {
+  template_id?: string;
+  name?: string;
+  modified_at?: string;
+  created_at?: string;
+}
+
+const SEARCH_PAGE = 1000;
+const SEARCH_MAX_CALLS = 10;
+
+/**
+ * Reads every template /templates/search reports in `total`, up to SEARCH_MAX_CALLS windows.
+ * Results are newest-first, so each further call asks for templates modified before the oldest
+ * one already seen. Whether modified_before is inclusive is undocumented, so rows are de-duplicated
+ * by ID and a window that adds nothing new stops the loop (reported as truncated).
+ */
+async function searchAllTemplates(ctx: ToolContext, includeArchived: boolean): Promise<{ rows: TemplateRow[]; total: number; truncated: boolean }> {
+  const byId = new Map<string, TemplateRow>();
+  let total: number | undefined;
+  let before: string | undefined;
+  let full = false;
+  for (let call = 0; call < SEARCH_MAX_CALLS; call++) {
+    const res = await ctx.client.get<{ total?: number; templates?: TemplateRow[] }>("/templates/search", {
+      field: ["template_id", "name", "modified_at", "created_at"],
+      archived: includeArchived ? "both" : "false",
+      order: "desc",
+      limit: SEARCH_PAGE,
+      modified_before: before,
+    });
+    total ??= res.total;
+    const batch = res.templates ?? [];
+    const sizeBefore = byId.size;
+    for (const t of batch) byId.set(t.template_id ?? `#${byId.size}`, t);
+    full = batch.length >= SEARCH_PAGE;
+    if (!full || (total !== undefined && byId.size >= total) || byId.size === sizeBefore) break;
+    const oldest = batch.reduce<string | undefined>((m, t) => (t.modified_at && (!m || t.modified_at < m) ? t.modified_at : m), undefined);
+    if (!oldest || oldest === before) break;
+    before = oldest;
+  }
+  const rows = [...byId.values()];
+  const truncated = total !== undefined ? rows.length < total : full;
+  return { rows, total: Math.max(total ?? 0, rows.length), truncated };
+}
+
 function parseOffset(pageToken: string | undefined): number {
   if (pageToken === undefined) return 0;
   if (/^\d+$/.test(pageToken)) return Number(pageToken);
@@ -125,15 +171,8 @@ export const templatesTools = [
     run: async (a, ctx) => {
       const offset = parseOffset(a.page_token);
       const limit = a.limit ?? 50;
-      const res = await ctx.client.get<{
-        templates?: Array<{ template_id?: string; name?: string; modified_at?: string; created_at?: string }>;
-      }>("/templates/search", {
-        field: ["template_id", "name", "modified_at", "created_at"],
-        archived: a.include_archived ? "both" : "false",
-        order: "desc",
-        limit: 1000,
-      });
-      let rows = res.templates ?? [];
+      const res = await searchAllTemplates(ctx, Boolean(a.include_archived));
+      let rows = res.rows;
       if (a.name) {
         const needle = a.name.toLowerCase();
         rows = rows.filter((t) => t.name?.toLowerCase().includes(needle));
@@ -141,8 +180,8 @@ export const templatesTools = [
       const page = rows.slice(offset, offset + limit).map((t) => ({ id: t.template_id, name: t.name, modified_at: t.modified_at, created_at: t.created_at }));
       const next = offset + limit < rows.length ? String(offset + limit) : undefined;
       return {
-        summary: `${rows.length} templates match; showing ${page.length}.${next ? " More available: pass next_page_token." : ""}`,
-        data: { total: rows.length, templates: page, next_page_token: next },
+        summary: `${rows.length} templates match; showing ${page.length}.${next ? " More available: pass next_page_token." : ""}${res.truncated ? ` Only ${res.rows.length} of ${res.total} templates could be read, so matches may be missing.` : ""}`,
+        data: { total: rows.length, templates: page, next_page_token: next, truncated: res.truncated || undefined },
         untrusted: true,
       };
     },
