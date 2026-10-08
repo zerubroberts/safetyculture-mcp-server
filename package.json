@@ -26,7 +26,8 @@
     "test:live": "vitest run --config vitest.live.config.ts",
     "lint:secrets": "node scripts/scan-secrets.mjs",
     "docs:tools": "tsx scripts/gen-tool-docs.ts",
-    "inspect": "npx @modelcontextprotocol/inspector node dist/index.js"
+    "inspect": "npx @modelcontextprotocol/inspector node dist/index.js",
+    "build:mcpb": "tsup --config mcpb/tsup.mcpb.config.ts && node -e \"const fs=require('fs');for(const f of ['mcpb/manifest.json','LICENSE','README.md'])fs.copyFileSync(f,'mcpb/build/'+f.split('/').pop());fs.writeFileSync('mcpb/build/package.json','{\\\"type\\\":\\\"module\\\"}')\" && npx -y @anthropic-ai/mcpb@2.1.2 pack mcpb/build safetyculture-mcp.mcpb"
   },
   "keywords": [
     "mcp",

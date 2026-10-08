@@ -1,0 +1,59 @@
+{
+  "manifest_version": "0.3",
+  "name": "safetyculture-mcp",
+  "display_name": "SafetyCulture MCP (for Mitti)",
+  "version": "0.1.0",
+  "description": "Ask your Mitti (formerly SafetyCulture) data anything: inspections, actions, issues, schedules, credentials, analytics and reports. Read-only by default.",
+  "long_description": "Independent open-source MCP server. Not affiliated with SafetyCulture Pty Ltd or Mitti. Read-only unless you choose a write mode; destructive changes need a dry run and a one-time confirmation. Leave the token empty and turn on demo mode to try it with a fictional organisation.",
+  "author": { "name": "Zerub Roberts", "url": "https://github.com/zerubroberts" },
+  "homepage": "https://github.com/zerubroberts/safetyculture-mcp-server",
+  "documentation": "https://github.com/zerubroberts/safetyculture-mcp-server#readme",
+  "support": "https://github.com/zerubroberts/safetyculture-mcp-server/issues",
+  "license": "MIT",
+  "keywords": ["safetyculture", "mitti", "inspections", "ehs", "safety", "analytics"],
+  "server": {
+    "type": "node",
+    "entry_point": "server/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/server/index.js"],
+      "env": {
+        "SC_API_TOKEN": "${user_config.sc_api_token}",
+        "SC_MODE": "${user_config.sc_mode}",
+        "SC_PII": "${user_config.sc_pii}",
+        "SC_DEMO": "${user_config.sc_demo}"
+      }
+    }
+  },
+  "user_config": {
+    "sc_api_token": {
+      "type": "string",
+      "title": "Mitti / SafetyCulture API token",
+      "description": "Starts with scapi_. Create it as a read-only integration user. Leave empty if you turn on demo mode.",
+      "sensitive": true,
+      "required": false
+    },
+    "sc_mode": {
+      "type": "string",
+      "title": "Access mode",
+      "description": "read-only (default), write (create and update), or full (adds delete, archive and bulk changes, each needing confirmation).",
+      "default": "read-only",
+      "required": false
+    },
+    "sc_pii": {
+      "type": "string",
+      "title": "Personal data in results",
+      "description": "contact (default: hide emails and phone numbers), strict (also hide names), or none.",
+      "default": "contact",
+      "required": false
+    },
+    "sc_demo": {
+      "type": "boolean",
+      "title": "Demo mode",
+      "description": "Use the built-in fictional organisation instead of your account. No token needed.",
+      "default": false,
+      "required": false
+    }
+  },
+  "compatibility": { "platforms": ["darwin", "win32", "linux"], "runtimes": { "node": ">=22.13.0" } }
+}

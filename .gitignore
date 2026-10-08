@@ -15,3 +15,5 @@ captures/
 .gates/
 .worktrees/
 .claude/worktrees/
+mcpb/build/
+*.mcpb

@@ -24,3 +24,9 @@ jobs:
       - run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Build the Claude Desktop extension
+        run: npm run build:mcpb
+      - name: Attach the extension to the GitHub release
+        run: gh release create "$GITHUB_REF_NAME" safetyculture-mcp.mcpb --title "$GITHUB_REF_NAME" --notes "See CHANGELOG.md" || gh release upload "$GITHUB_REF_NAME" safetyculture-mcp.mcpb --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}

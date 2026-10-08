@@ -8,7 +8,7 @@ Status column: **tested** = we ran this exact setup on 2026-10-08; **documented*
 
 | Client | Local (stdio) | Local HTTP server | Status |
 |---|---|---|---|
-| [Claude Desktop](#claude-desktop) | yes | via stdio only | documented |
+| [Claude Desktop](#claude-desktop) | yes (one-click .mcpb or config) | via stdio only | documented; .mcpb validated |
 | [Claude Code](#claude-code) | yes | yes | tested |
 | [Codex (CLI, IDE, ChatGPT desktop)](#codex) | yes | yes | tested |
 | [ChatGPT (web)](#chatgpt) | via tunnel | public HTTPS + OAuth only | documented |
@@ -24,6 +24,10 @@ Print a ready-made snippet for any of these with `npx -y safetyculture-mcp confi
 ---
 
 ## Claude Desktop
+
+**One click (easiest):** download `safetyculture-mcp.mcpb` from the [latest release](https://github.com/zerubroberts/safetyculture-mcp-server/releases/latest) and double-click it (or drag it onto Claude Desktop). Claude asks for your API token, access mode and privacy level, and stores the token securely. Tick **Demo mode** to try it without a token. The bundle is a Claude Desktop Extension (MCPB, manifest 0.3), validated with Anthropic's `mcpb` tool; it includes Node-compatible code only and needs no npm.
+
+**Manual config:**
 1. Open **Claude > Settings > Developer > Edit Config**. The file is `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows).
 2. Add:
 ```json
