@@ -113,7 +113,8 @@ describe("query result memory limits", () => {
     // Past V8's maximum string length the child itself dies: contained, reported as a ToolError.
     const crash = await runReadOnlyQuery(store.path, "SELECT printf('%.*c', 600000000, 'x') AS huge", { timeoutMs: 20_000 }).catch((e: unknown) => e);
     expect(crash).toBeInstanceOf(ToolError);
-    expect((crash as Error).message).toMatch(/memory limit/);
+    // Node 22 kills the child (memory limit); Node 24's node:sqlite refuses the oversized value itself.
+    expect((crash as Error).message).toMatch(/memory limit|SQLite rejected the query/);
     // Still serving queries afterwards.
     const ok = await runReadOnlyQuery(store.path, "SELECT 1 AS n");
     expect(ok.rows).toEqual([{ n: 1 }]);
