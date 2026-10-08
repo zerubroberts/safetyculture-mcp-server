@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { ToolError } from "../core/errors.js";
 import { ids, links, P } from "../core/params.js";
+import type { FeedPage } from "../core/client.js";
 import { defineTool, type ToolContext } from "../core/registry.js";
 import { parsePeriod } from "../core/time.js";
 
@@ -10,7 +11,7 @@ import { parsePeriod } from "../core/time.js";
  * Endpoint contracts verified with `node scripts/api-ref.mjs` on 2026-10-08:
  * - search/list: GET /feed/inspections (thepubservice_feedinspections). Server-side
  *   filters are template, archived, completed and modified_after/before only; site and
- *   owner are applied client-side after the feed is collected.
+ *   owner are applied client-side while following the feed's next_page links.
  * - header + answers: GET /inspections/v1/inspections/{id}/details
  *   (externalinspectionservice_getinspectiondetails) plus GET
  *   /inspections/v1/inspections/{id} (inspectionservice_getinspection) for duration.
@@ -23,9 +24,10 @@ import { parsePeriod } from "../core/time.js";
  *   continues an in-progress export, which is what the poll loop below does.
  * - media list: the `media` array on GET /inspections/v1/inspections/{id};
  *   download URL: GET /media/v1/download/{id} (mediaservice_getdownloadsignedurl).
- * - writes: POST /inspections/integration/v1/inspections (create), PUT .../owner
- *   ({owner_id}), PUT .../site ({site_id}), PUT ... (integration answer updates),
- *   POST .../complete, POST .../clone, POST /audits/{audit_id}/share,
+ * - writes: POST /inspections/integration/v1/inspections (create), PUT
+ *   /inspections/v1/inspections/{id}/owner ({owner_id}), PUT .../site ({site_id}),
+ *   PUT /inspections/integration/v1/inspections/{id} (answer updates), POST
+ *   /inspections/integration/v1/inspections/{id}/complete, POST .../clone, POST /audits/{audit_id}/share,
  *   DELETE .../archive (restore), POST .../archive (archive),
  *   DELETE /inspections/v1/inspections/{id} (delete).
  *
@@ -40,6 +42,31 @@ const reason = z
   .max(500)
   .optional()
   .describe("Why this change is being made. Stored in the local audit log.");
+
+// Each answer kind requires its own value field, so a malformed answer is rejected by schema
+// validation before any API call is made (no half-applied update).
+const answerBase = {
+  item_id: z.string().describe("Question item ID within the inspection."),
+  note: z.string().max(5000).optional().describe("Note attached to the answer."),
+};
+const answerInput = z.discriminatedUnion("type", [
+  z.object({ ...answerBase, type: z.enum(["text", "paragraph"]).describe("Answer kind."), text: z.string().describe("Value for text/paragraph answers.") }),
+  z.object({ ...answerBase, type: z.literal("number").describe("Answer kind."), number: z.number().describe("Value for number answers.") }),
+  z.object({ ...answerBase, type: z.literal("checkbox").describe("Answer kind."), checked: z.boolean().describe("Value for checkbox answers.") }),
+  z.object({
+    ...answerBase,
+    type: z.literal("datetime").describe("Answer kind."),
+    datetime: z.string().datetime({ offset: true }).describe("Value for datetime answers (ISO 8601)."),
+  }),
+  z.object({
+    ...answerBase,
+    type: z.literal("question").describe("Answer kind."),
+    response_ids: z.array(z.string()).describe("Selected response IDs for question answers."),
+  }),
+]);
+
+/** Raw feed records sc_search_inspections reads at most per call. */
+const MAX_SEARCH_RECORDS = 2000;
 
 const completed = z.enum(["true", "false", "any"]).optional().describe("Completion status. Default: any.");
 
@@ -262,27 +289,53 @@ export const inspectionsTools = [
       const p = parsePeriod(a.period, ctx.now());
       const offset = parseOffset(a.page_token);
       const limit = a.limit ?? 50;
-      const res = await ctx.client.collectFeed<FeedInspection>(
-        "/feed/inspections",
-        {
-          template: a.template_ids,
-          archived: a.archived ? "true" : "false",
-          completed: a.completed === undefined || a.completed === "any" ? "both" : a.completed,
-          modified_after: p.from.toISOString(),
-          modified_before: p.to.toISOString(),
-        },
-        // One extra record past the page so we know whether a next page exists.
-        { maxItems: Math.min(2000, offset + limit + 1) },
-      );
-      let rows = res.items;
-      if (a.site_ids?.length) rows = rows.filter((r) => r.site_id && a.site_ids!.includes(r.site_id));
-      if (a.owner_id) rows = rows.filter((r) => r.owner_id === a.owner_id);
+      const keep = (r: FeedInspection) =>
+        (!a.site_ids?.length || (r.site_id !== undefined && a.site_ids.includes(r.site_id))) && (!a.owner_id || r.owner_id === a.owner_id);
+      // Site and owner are filtered client-side, so keep following feed pages until there are
+      // enough MATCHING rows (one past the page, to know whether a next page exists), the feed
+      // ends, or the 2000-raw-record cap is reached.
+      const want = offset + limit + 1;
+      const query = {
+        template: a.template_ids,
+        archived: a.archived ? "true" : "false",
+        completed: a.completed === undefined || a.completed === "any" ? "both" : a.completed,
+        modified_after: p.from.toISOString(),
+        modified_before: p.to.toISOString(),
+      };
+      const rows: FeedInspection[] = [];
+      const seen = new Set<string>();
+      let path: string | undefined;
+      let raw = 0;
+      let truncated = false;
+      for (;;) {
+        const res = path === undefined
+          ? await ctx.client.get<FeedPage<FeedInspection>>("/feed/inspections", query)
+          : await ctx.client.get<FeedPage<FeedInspection>>(path);
+        const data = res.data ?? [];
+        const batch = data.slice(0, MAX_SEARCH_RECORDS - raw);
+        raw += batch.length;
+        rows.push(...batch.filter(keep));
+        const next = res.metadata?.next_page;
+        if (rows.length >= want) break;
+        if (raw >= MAX_SEARCH_RECORDS) {
+          truncated = Boolean(next) || data.length > batch.length;
+          break;
+        }
+        if (!next) break;
+        // A repeating cursor is a known upstream feed defect: stop rather than loop.
+        if (seen.has(next)) {
+          truncated = true;
+          break;
+        }
+        seen.add(next);
+        path = next;
+      }
       const page = rows.slice(offset, offset + limit);
       const projected = page.map(projectFeedRow);
-      const next = offset + limit < rows.length ? String(offset + limit) : undefined;
+      const nextToken = offset + limit < rows.length ? String(offset + limit) : undefined;
       return {
-        summary: `${rows.length} inspections match; showing ${projected.length}.${next ? " More available: pass next_page_token." : ""}${res.truncated ? " Feed truncated at 2000 records: narrow the filters." : ""}`,
-        data: { total: rows.length, inspections: projected, next_page_token: next, truncated: res.truncated || undefined },
+        summary: `${rows.length} inspections match; showing ${projected.length}.${nextToken ? " More available: pass next_page_token." : ""}${truncated ? " Feed truncated at 2000 records: narrow the filters." : ""}`,
+        data: { total: rows.length, inspections: projected, next_page_token: nextToken, truncated: truncated || undefined },
         untrusted: true,
       };
     },
@@ -407,7 +460,7 @@ export const inspectionsTools = [
     toolset: "inspections",
     access: "read",
     description:
-      "Lists the photos, videos and files attached to one inspection. Pass a media id plus its token to sc_get_media_url to get a downloadable URL.",
+      "Lists the photos, videos and files attached to one inspection. Pass a media id plus its media_token to sc_get_media_url to get a downloadable URL.",
     input: { inspection_id: P.inspectionId, limit: P.limit(50, 100) },
     run: async (a, ctx) => {
       const res = await ctx.client.get<{
@@ -415,7 +468,9 @@ export const inspectionsTools = [
       }>(`/inspections/v1/inspections/${encodeURIComponent(a.inspection_id)}`);
       const all = res.inspection?.media ?? [];
       const limit = a.limit ?? 50;
-      const page = all.slice(0, limit).map((m) => ({ id: m.id, filename: m.filename, media_type: m.media_type }));
+      // The per-media token only works on an authenticated /media/v1/download call. It is
+      // projected as media_token because the output sanitizer always strips keys named "token".
+      const page = all.slice(0, limit).map((m) => ({ id: m.id, media_token: m.token, filename: m.filename, media_type: m.media_type }));
       return {
         summary: `${all.length} media files on inspection ${a.inspection_id}; showing ${page.length}.`,
         data: { inspection_id: a.inspection_id, total: all.length, media: page },
@@ -430,10 +485,10 @@ export const inspectionsTools = [
     toolset: "inspections",
     access: "read",
     description:
-      "Turns a media id plus its token (from sc_list_inspection_media or inspection answers) into a downloadable URL. Signed URLs expire quickly, so download immediately.",
+      "Turns a media id plus its token (media_token from sc_list_inspection_media) into a downloadable URL. Signed URLs expire quickly, so download immediately.",
     input: {
       media_id: z.string().describe("Media ID from the inspection's media list."),
-      token: z.string().describe("Per-media access token returned alongside the media ID."),
+      token: z.string().describe("Per-media access token: the media_token returned alongside the media ID by sc_list_inspection_media."),
       media_type: z
         .enum(["image", "video", "pdf", "word", "excel", "slides", "csv"])
         .optional()
@@ -505,18 +560,7 @@ export const inspectionsTools = [
       owner_id: z.string().optional().describe("New owner user ID (user_...)."),
       site_id: z.string().optional().describe("New site ID."),
       answers: z
-        .array(
-          z.object({
-            item_id: z.string().describe("Question item ID within the inspection."),
-            type: z.enum(["text", "number", "paragraph", "checkbox", "question", "datetime"]).describe("Answer kind."),
-            text: z.string().optional().describe("Value for text/paragraph answers."),
-            number: z.number().optional().describe("Value for number answers."),
-            checked: z.boolean().optional().describe("Value for checkbox answers."),
-            datetime: z.string().datetime({ offset: true }).optional().describe("Value for datetime answers (ISO 8601)."),
-            response_ids: z.array(z.string()).optional().describe("Selected response IDs for question answers."),
-            note: z.string().max(5000).optional().describe("Note attached to the answer."),
-          }),
-        )
+        .array(answerInput)
         .max(50)
         .optional()
         .describe("Simple answer updates (max 50 per call). Find item IDs with sc_get_inspection_answers."),
@@ -558,11 +602,11 @@ export const inspectionsTools = [
           else if (ans.type === "number") item.number_item = { value: ans.number };
           else if (ans.type === "checkbox") item.checkbox_item = { value: ans.checked };
           else if (ans.type === "datetime") item.datetime_item = { value: ans.datetime };
-          else if (ans.type === "question") item.question_item = { response_ids: ans.response_ids ?? [] };
+          else if (ans.type === "question") item.question_item = { response_ids: ans.response_ids };
           return item;
         });
         try {
-          await ctx.client.put(base, { items });
+          await ctx.client.put(`/inspections/integration/v1/inspections/${encodeURIComponent(a.inspection_id)}`, { items });
           changed.push(`answers(${a.answers.length})`);
         } catch (e) {
           failed.push({ field: "answers", error: e instanceof Error ? e.message : String(e) });
@@ -588,7 +632,7 @@ export const inspectionsTools = [
     input: { inspection_id: P.inspectionId, reason },
     run: async ({ inspection_id }, ctx) => {
       const res = await ctx.client.post<{ inspection_identity?: { inspection_id?: string } }>(
-        `/inspections/v1/inspections/${encodeURIComponent(inspection_id)}/complete`,
+        `/inspections/integration/v1/inspections/${encodeURIComponent(inspection_id)}/complete`,
         {},
       );
       return {

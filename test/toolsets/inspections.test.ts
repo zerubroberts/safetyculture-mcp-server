@@ -199,12 +199,13 @@ describe("inspections toolset", () => {
 
   it("lists media and resolves a download URL with the mapped media type", async () => {
     const api = new MockApi()
-      .on("GET /inspections/v1/inspections/audit_1", { inspection: { media: [{ id: "m-1", filename: "gate.png", media_type: "MEDIA_TYPE_IMAGE" }] } })
+      .on("GET /inspections/v1/inspections/audit_1", { inspection: { media: [{ id: "m-1", token: "tok-1", filename: "gate.png", media_type: "MEDIA_TYPE_IMAGE" }] } })
       .on("GET /media/v1/download/m-1", { url: "https://example.test/m-1" });
     const { call, json } = await connect(api);
     const listed = json((await call("sc_list_inspection_media", { inspection_id: "audit_1" })).text);
-    expect(listed.media).toEqual([{ id: "m-1", filename: "gate.png", media_type: "MEDIA_TYPE_IMAGE" }]);
-    const got = json((await call("sc_get_media_url", { media_id: "m-1", token: "tok-1", media_type: "video" })).text);
+    // The per-media token is required by sc_get_media_url, so the list must carry it.
+    expect(listed.media).toEqual([{ id: "m-1", media_token: "tok-1", filename: "gate.png", media_type: "MEDIA_TYPE_IMAGE" }]);
+    const got = json((await call("sc_get_media_url", { media_id: "m-1", token: listed.media[0].media_token, media_type: "video" })).text);
     expect(got.url).toBe("https://example.test/m-1");
     expect(api.calls[1]).toMatchObject({
       method: "GET",
@@ -228,7 +229,7 @@ describe("inspections toolset", () => {
     const api = new MockApi()
       .on("PUT /inspections/v1/inspections/audit_1/owner", { inspection_id: "audit_1" })
       .on("PUT /inspections/v1/inspections/audit_1/site", { inspection_id: "audit_1" })
-      .on("PUT /inspections/v1/inspections/audit_1", { inspection_id: "audit_1" });
+      .on("PUT /inspections/integration/v1/inspections/audit_1", { inspection_identity: { inspection_id: "audit_1" } });
     const { call, json } = await connect(api, { SC_MODE: "write" });
     const data = json(
       (
@@ -245,7 +246,8 @@ describe("inspections toolset", () => {
     );
     expect(api.calls.find((c) => c.path.endsWith("/owner"))!.body).toEqual({ owner_id: "user_2" });
     expect(api.calls.find((c) => c.path.endsWith("/site"))!.body).toEqual({ site_id: "site-2" });
-    expect(api.calls.find((c) => c.path === "/inspections/v1/inspections/audit_1")!.body).toEqual({
+    expect(api.calls.find((c) => c.path === "/inspections/integration/v1/inspections/audit_1")).toMatchObject({ method: "PUT" });
+    expect(api.calls.find((c) => c.path === "/inspections/integration/v1/inspections/audit_1")!.body).toEqual({
       items: [
         { item_id: "q-1", item_type: "ITEM_TYPE_TEXT", text_item: { value: "Fixed" } },
         { item_id: "q-2", item_type: "ITEM_TYPE_QUESTION", note: "Verified", question_item: { response_ids: ["r-yes"] } },
@@ -256,13 +258,13 @@ describe("inspections toolset", () => {
 
   it("completes, clones, shares and restores with exact requests", async () => {
     const api = new MockApi()
-      .on("POST /inspections/v1/inspections/audit_1/complete", { inspection_identity: { inspection_id: "audit_1" } })
+      .on("POST /inspections/integration/v1/inspections/audit_1/complete", { inspection_identity: { inspection_id: "audit_1" } })
       .on("POST /inspections/v1/inspections/audit_1/clone", { inspection_id: "audit_2" })
       .on("POST /audits/audit_1/share", {})
       .on("DELETE /inspections/v1/inspections/audit_1/archive", { inspection_id: "audit_1" });
     const { call, json } = await connect(api, { SC_MODE: "write" });
     await call("sc_complete_inspection", { inspection_id: "audit_1" });
-    expect(api.calls[0]).toMatchObject({ method: "POST", path: "/inspections/v1/inspections/audit_1/complete" });
+    expect(api.calls[0]).toMatchObject({ method: "POST", path: "/inspections/integration/v1/inspections/audit_1/complete" });
     const cloned = json((await call("sc_clone_inspection", { inspection_id: "audit_1" })).text);
     expect(cloned.id).toBe("audit_2");
     await call("sc_share_inspection", { inspection_id: "audit_1", shares: [{ id: "user_2", permission: "view" }] });
@@ -306,5 +308,90 @@ describe("inspections toolset", () => {
     const token = dry.text.match(/confirm_token="([^"]+)"/)![1]!;
     const ok = await call("sc_delete_inspection", { inspection_id: "audit_1", confirm_token: token });
     expect(ok.isError).toBe(false);
+  });
+  it("follows feed pages until enough site/owner matches are found", async () => {
+    // First raw page has no site-2 rows; the matches only appear on a later page.
+    const firstPage = Array.from({ length: 60 }, (_, i) => feedRow(`audit_a${i}`));
+    const api = new MockApi().on("GET /feed/inspections", (req: { query: Record<string, string> }) =>
+      req.query.cursor === "p2"
+        ? { data: [feedRow("audit_b1", { site_id: "site-2" }), feedRow("audit_b2", { site_id: "site-2" })], metadata: {} }
+        : { data: firstPage, metadata: { next_page: "/feed/inspections?cursor=p2" } },
+    );
+    const { call, json } = await connect(api);
+    const data = json((await call("sc_search_inspections", { site_ids: ["site-2"], limit: 1 })).text);
+    expect(api.calls).toHaveLength(2);
+    expect(api.calls[1]!.query).toEqual({ cursor: "p2" });
+    expect(data.inspections.map((r: { id: string }) => r.id)).toEqual(["audit_b1"]);
+    expect(data.next_page_token).toBe("1");
+    expect(data.truncated).toBeUndefined();
+    const second = json((await call("sc_search_inspections", { site_ids: ["site-2"], limit: 1, page_token: "1" })).text);
+    expect(second.inspections.map((r: { id: string }) => r.id)).toEqual(["audit_b2"]);
+    expect(second.next_page_token).toBeUndefined();
+  });
+
+  it("stops following the feed once it has one match past the page", async () => {
+    const api = new MockApi().on("GET /feed/inspections", {
+      data: [feedRow("audit_1"), feedRow("audit_2")],
+      metadata: { next_page: "/feed/inspections?cursor=p2" },
+    });
+    const { call, json } = await connect(api);
+    const data = json((await call("sc_search_inspections", { limit: 1 })).text);
+    expect(api.calls).toHaveLength(1);
+    expect(data.next_page_token).toBe("1");
+    expect(data.truncated).toBeUndefined();
+  });
+
+  it("rejects an answer missing the value for its type before any API call", async () => {
+    const api = new MockApi()
+      .on("PUT /inspections/v1/inspections/audit_1/owner", { inspection_id: "audit_1" })
+      .on("PUT /inspections/integration/v1/inspections/audit_1", {});
+    const { call } = await connect(api, { SC_MODE: "write" });
+    for (const bad of [
+      { item_id: "q-1", type: "text" },
+      { item_id: "q-1", type: "paragraph" },
+      { item_id: "q-1", type: "number" },
+      { item_id: "q-1", type: "checkbox" },
+      { item_id: "q-1", type: "datetime" },
+      { item_id: "q-1", type: "question" },
+      { item_id: "q-1", type: "number", text: "5" },
+    ]) {
+      const res = await call("sc_update_inspection", {
+        inspection_id: "audit_1",
+        owner_id: "user_2",
+        answers: [{ item_id: "q-0", type: "text", text: "ok" }, bad],
+      });
+      expect(res.isError, JSON.stringify(bad)).toBe(true);
+    }
+    // The owner change was never sent, so a bad answer cannot leave a half-updated inspection.
+    expect(api.calls).toHaveLength(0);
+  });
+
+  it("sends every answer kind to the integration update endpoint", async () => {
+    const api = new MockApi().on("PUT /inspections/integration/v1/inspections/audit_1", { inspection_identity: { inspection_id: "audit_1" } });
+    const { call, json } = await connect(api, { SC_MODE: "write" });
+    const data = json(
+      (
+        await call("sc_update_inspection", {
+          inspection_id: "audit_1",
+          answers: [
+            { item_id: "q-1", type: "paragraph", text: "Long note" },
+            { item_id: "q-2", type: "number", number: 0 },
+            { item_id: "q-3", type: "checkbox", checked: false },
+            { item_id: "q-4", type: "datetime", datetime: "2026-09-01T10:00:00+10:00" },
+          ],
+        })
+      ).text,
+    );
+    expect(api.calls).toHaveLength(1);
+    expect(api.calls[0]).toMatchObject({ method: "PUT", path: "/inspections/integration/v1/inspections/audit_1" });
+    expect(api.calls[0]!.body).toEqual({
+      items: [
+        { item_id: "q-1", item_type: "ITEM_TYPE_PARAGRAPH", paragraph_item: { value: "Long note" } },
+        { item_id: "q-2", item_type: "ITEM_TYPE_NUMBER", number_item: { value: 0 } },
+        { item_id: "q-3", item_type: "ITEM_TYPE_CHECKBOX", checkbox_item: { value: false } },
+        { item_id: "q-4", item_type: "ITEM_TYPE_DATETIME", datetime_item: { value: "2026-09-01T10:00:00+10:00" } },
+      ],
+    });
+    expect(data.changed).toEqual(["answers(4)"]);
   });
 });
