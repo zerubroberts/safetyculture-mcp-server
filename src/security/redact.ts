@@ -110,7 +110,8 @@ function looksLikePhone(raw: string): boolean {
 export function applyReplacements(text: string, replaced: Map<string, string>): string {
   let out = text;
   for (const [original, alias] of [...replaced.entries()].sort((a, b) => b[0].length - a[0].length)) {
-    if (original.length >= 2) out = out.split(original).join(alias);
+    // Case-insensitive, so "ZELDA QUORN" in prose is caught when the record says "Zelda Quorn".
+    if (original.length >= 2) out = out.replace(new RegExp(original.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), () => alias);
   }
   return out;
 }

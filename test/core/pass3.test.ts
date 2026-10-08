@@ -187,3 +187,36 @@ describe("pass 3 re-verification (findings the first fix missed)", () => {
     expect(result.metrics).toMatchObject({ due: 0, on_time: 0, late: 0, missed: 0, compliance_pct: null });
   });
 });
+
+describe("pass 3 re-verification round 2: strict never quotes upstream error bodies", () => {
+  const bodies = [
+    JSON.stringify({ user: { firstname: "Zelda", lastname: "Quorn" }, detail: "x".repeat(700) }),
+    '{"user":{"firstname":"Zelda","lastname":"Quorn"}} trailing {see docs}',
+    '{"a":1} {"firstname":"Zelda","lastname":"Quorn"}',
+    JSON.stringify({ errors: [{ field: "assignee", value: "Zelda Quorn" }] }),
+  ];
+  it.each(bodies.map((b, i) => [i, b]))("body %i: no name in the tool error or the audit log", async (_i, body) => {
+    const api = new MockApi().on("GET /tasks/v1/actions/a1", () => new Response(body as string, { status: 400 }));
+    const { call, config } = await connect(api, { SC_PII: "strict" });
+    const r = await call("sc_get_action", { action_id: "a1" });
+    expect(r.isError).toBe(true);
+    expect(r.text).toContain("Mitti API 400");
+    expect(r.text).not.toMatch(/zelda|quorn/i);
+    const { errorMessage } = await import("../../src/core/registry.js");
+    const { ScApiError } = await import("../../src/core/errors.js");
+    expect(errorMessage(new ScApiError(400, "POST", "/tasks/v1/actions", body as string), config)).not.toMatch(/zelda|quorn/i);
+  });
+
+  it("names from the arguments are masked in strict audit summaries, case-insensitively", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "scmcp-audit-"));
+    const path = join(dir, "audit.jsonl");
+    await new AuditLog(path, "strict").record({ tool: "sc_update_action", access: "write", phase: "executed", args: { assignee: "Zelda Quorn" }, result: "Assigned to ZELDA QUORN." });
+    expect(readFileSync(path, "utf8")).not.toMatch(/zelda|quorn/i);
+  });
+
+  it("contact level still shows the API message", async () => {
+    const api = new MockApi().on("GET /tasks/v1/actions/a1", () => new Response('{"message":"field due_at is invalid"}', { status: 400 }));
+    const { call } = await connect(api);
+    expect((await call("sc_get_action", { action_id: "a1" })).text).toContain("due_at is invalid");
+  });
+});

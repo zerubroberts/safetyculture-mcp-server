@@ -11,6 +11,11 @@ export class ScApiError extends Error {
     this.name = "ScApiError";
   }
 
+  /** The same message without the upstream body (used at SC_PII=strict, where bodies can quote names). */
+  get withoutBody(): string {
+    return ScApiError.describe(this.status, this.method, this.path, "");
+  }
+
   static describe(status: number, method: string, path: string, body: string): string {
     const hint =
       status === 401

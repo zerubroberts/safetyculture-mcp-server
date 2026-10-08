@@ -1,7 +1,7 @@
 import { appendFile, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { PiiLevel } from "../core/config.js";
-import { maskFreeText, redactSecrets, sanitize } from "./redact.js";
+import { applyReplacements, maskFreeText, redactSecrets, sanitize } from "./redact.js";
 
 export interface AuditEntry {
   tool: string;
@@ -26,7 +26,10 @@ export class AuditLog {
       await this.ready;
       // Same privacy policy as tool output, applied to the structure before serialising.
       // Error and result strings can quote upstream JSON, so names in them are masked too.
-      const text = (v: string | undefined) => (v === undefined ? undefined : maskFreeText(v, this.pii));
+      // At strict, names found in the arguments (e.g. an assignee) are replaced in those strings too.
+      const fromArgs = new Map<string, string>();
+      if (this.pii === "strict") sanitize(entry.args, this.pii, { collect: fromArgs });
+      const text = (v: string | undefined) => (v === undefined ? undefined : applyReplacements(maskFreeText(v, this.pii), fromArgs));
       const masked = { ...entry, error: text(entry.error), result: typeof entry.result === "string" ? text(entry.result) : entry.result };
       const line = redactSecrets(JSON.stringify(sanitize({ ts: new Date().toISOString(), ...masked }, this.pii)));
       await appendFile(this.path, line + "\n", { encoding: "utf8", mode: 0o600 });

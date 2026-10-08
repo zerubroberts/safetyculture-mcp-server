@@ -156,10 +156,11 @@ export function formatResult(result: ToolResult, cfg: Pick<Config, "pii" | "maxR
 }
 
 /** The summary as stored locally (audit log): same masking and name replacement as tool output. */
-function privateSummary(result: ToolResult, cfg: Pick<Config, "pii" | "apiToken">): string {
+function privateSummary(result: ToolResult, cfg: Pick<Config, "pii" | "apiToken">, args?: unknown): string {
   const key = keyFor(cfg);
   const replaced = new Map<string, string>();
   if (result.data !== undefined) sanitize(result.data, cfg.pii, { key, collect: replaced });
+  if (args !== undefined) sanitize(args, cfg.pii, { key, collect: replaced });
   const summary = maskFreeText(result.summary, cfg.pii, key);
   return cfg.pii === "strict" ? applyReplacements(summary, replaced) : summary;
 }
@@ -253,12 +254,12 @@ export function createRegistry(server: McpServer, ctx: ToolContext): Registry {
               if (!confirm.verify(spec.name, args, confirm_token))
                 throw new ToolError("confirm_token is invalid, expired, or the arguments changed since the dry run. Run the dry run again.");
               result = await spec.run(args, ctx);
-              await ctx.audit.record({ tool: spec.name, access: "destructive", phase: "executed", args, result: privateSummary(result, ctx.config) });
+              await ctx.audit.record({ tool: spec.name, access: "destructive", phase: "executed", args, result: privateSummary(result, ctx.config, args) });
             }
           } else {
             result = await spec.run(args, ctx);
             if (spec.access === "write")
-              await ctx.audit.record({ tool: spec.name, access: "write", phase: "executed", args, result: privateSummary(result, ctx.config) });
+              await ctx.audit.record({ tool: spec.name, access: "write", phase: "executed", args, result: privateSummary(result, ctx.config, args) });
           }
           return { content: [{ type: "text" as const, text: formatResult(result, ctx.config) }] };
         } catch (err) {
@@ -268,7 +269,7 @@ export function createRegistry(server: McpServer, ctx: ToolContext): Registry {
               access: spec.access,
               phase: "failed",
               args,
-              error: maskFreeText(err instanceof Error ? err.message : String(err), ctx.config.pii, keyFor(ctx.config)),
+              error: errorMessage(err, ctx.config),
             });
           return { isError: true, content: [{ type: "text" as const, text: errorText(err, ctx.config) }] };
         }
@@ -287,9 +288,20 @@ export function createRegistry(server: McpServer, ctx: ToolContext): Registry {
  * text, names, emails), so they are masked with the privacy policy and wrapped as untrusted data.
  */
 export function errorText(err: unknown, cfg?: Pick<Config, "pii" | "apiToken">): string {
-  const mask = (s: string) => (cfg ? maskFreeText(s, cfg.pii, keyFor(cfg)) : redactSecrets(s));
-  if (err instanceof ToolError) return wrapUntrusted(mask(err.message));
   if (err instanceof z.ZodError) return `Invalid arguments: ${err.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`;
-  if (err instanceof ScApiError) return wrapUntrusted(mask(err.message));
-  return wrapUntrusted(mask(`Unexpected error: ${err instanceof Error ? err.message : String(err)}`));
+  return wrapUntrusted(errorMessage(err, cfg));
+}
+
+/**
+ * The error message as shown to the model and stored in the audit log. At SC_PII=strict, upstream
+ * bodies and unexpected-error details are withheld entirely: names inside arbitrary error text
+ * cannot be found reliably, so they are not shown at all (fail closed).
+ */
+export function errorMessage(err: unknown, cfg?: Pick<Config, "pii" | "apiToken">): string {
+  const mask = (s: string) => (cfg ? maskFreeText(s, cfg.pii, keyFor(cfg)) : redactSecrets(s));
+  const strict = cfg?.pii === "strict";
+  if (err instanceof ScApiError) return strict ? `${err.withoutBody} (The API's message is withheld at SC_PII=strict.)` : mask(err.message);
+  if (err instanceof ToolError || err instanceof z.ZodError) return mask(err.message);
+  if (strict) return "Unexpected error (details withheld at SC_PII=strict).";
+  return mask(`Unexpected error: ${err instanceof Error ? err.message : String(err)}`);
 }
