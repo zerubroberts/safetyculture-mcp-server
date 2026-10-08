@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="430" viewBox="0 0 880 430" role="img" aria-labelledby="t d">
+<title id="t">sc_safety_pulse output for the demo organisation</title>
+<desc id="d">last 7 days (2026-10-02 to 2026-10-08): 37 inspections completed (previous 42, down), average score 93.6% (down), failed-item rate 5.97% of 486 answered items (up), 0 new issues, 11 actions created vs 7 completed, 40 open overdue actions, 2 missed scheduled inspections. 3 attention items. Caveats: 3.</desc>
+<rect width="880" height="430" rx="14" fill="#16191d"/>
+<rect x="0.5" y="0.5" width="879" height="429" rx="14" fill="none" stroke="#ffffff" stroke-opacity="0.08"/>
+<circle cx="36" cy="38" r="5" fill="#cfee3a"/>
+<text x="52" y="43" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14" font-weight="500" fill="#eef0f2">sc_safety_pulse</text>
+<text x="196" y="43" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13" fill="#a9afb6">period: "last 7 days"</text>
+<rect x="684" y="24" width="164" height="26" rx="13" fill="none" stroke="#2b3036"/>
+<text x="766" y="41" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11.5" fill="#a9afb6">demo organisation</text>
+<text x="32" y="74" font-family="'Archivo', 'Segoe UI', system-ui, -apple-system, Helvetica, Arial, sans-serif" font-size="13" fill="#a9afb6">last 7 days (2026-10-02 to 2026-10-08) vs the 7 days before</text>
+<g transform="translate(32,92)">
+  <rect width="196" height="96" rx="8" fill="#1f2328" stroke="#2b3036"/>
+  <text x="16" y="28" font-family="'Archivo', 'Segoe UI', system-ui, -apple-system, Helvetica, Arial, sans-serif" font-size="13" fill="#a9afb6">Inspections completed</text>
+  <text x="16" y="62" font-family="'Archivo', 'Segoe UI', system-ui, -apple-system, Helvetica, Arial, sans-serif" font-size="30" font-weight="700" fill="#eef0f2">37</text>
+  <text x="16" y="84" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11.5" fill="#f0795c">-5 vs 42  worse</text>
+</g>
+<g transform="translate(240,92)">
+  <rect width="196" height="96" rx="8" fill="#1f2328" stroke="#2b3036"/>
+  <text x="16" y="28" font-family="'Archivo', 'Segoe UI', system-ui, -apple-system, Helvetica, Arial, sans-serif" font-size="13" fill="#a9afb6">Average score</text>
+  <text x="16" y="62" font-family="'Archivo', 'Segoe UI', system-ui, -apple-system, Helvetica, Arial, sans-serif" font-size="30" font-weight="700" fill="#eef0f2">93.6%</text>
+  <text x="16" y="84" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11.5" fill="#f0795c">-0.8 pp vs 94.4  worse</text>
+</g>
+<g transform="translate(448,92)">
+  <rect width="196" height="96" rx="8" fill="#1f2328" stroke="#2b3036"/>
+  <text x="16" y="28" font-family="'Archivo', 'Segoe UI', system-ui, -apple-system, Helvetica, Arial, sans-serif" font-size="13" fill="#a9afb6">Failed-item rate</text>
+  <text x="16" y="62" font-family="'Archivo', 'Segoe UI', system-ui, -apple-system, Helvetica, Arial, sans-serif" font-size="30" font-weight="700" fill="#eef0f2">5.97%</text>
+  <text x="16" y="84" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11.5" fill="#f0795c">+0.85 pp vs 5.12  worse</text>
+</g>
+<g transform="translate(656,92)">
+  <rect width="196" height="96" rx="8" fill="#1f2328" stroke="#2b3036"/>
+  <text x="16" y="28" font-family="'Archivo', 'Segoe UI', system-ui, -apple-system, Helvetica, Arial, sans-serif" font-size="13" fill="#a9afb6">Open overdue actions</text>
+  <text x="16" y="62" font-family="'Archivo', 'Segoe UI', system-ui, -apple-system, Helvetica, Arial, sans-serif" font-size="30" font-weight="700" fill="#eef0f2">40</text>
+  <text x="16" y="84" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11.5" fill="#a9afb6">oldest 349 days overdue</text>
+</g>
+<text x="32" y="240" font-family="'Archivo', 'Segoe UI', system-ui, -apple-system, Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#eef0f2">Needs attention today</text>
+<g transform="translate(32,262)">
+  <rect width="816" height="32" rx="6" fill="#1f2328"/>
+  <circle cx="16" cy="16" r="5" fill="#cfee3a"/>
+  <text x="32" y="21" font-family="'Archivo', 'Segoe UI', system-ui, -apple-system, Helvetica, Arial, sans-serif" font-size="13.5" fill="#eef0f2">High-priority action &quot;Emergency exits clear and unobstructed: fix at Hilltop Plant&quot; is 292 days overdue.</text>
+</g>
+<g transform="translate(32,302)">
+  <rect width="816" height="32" rx="6" fill="#1f2328"/>
+  <circle cx="16" cy="16" r="5" fill="#cfee3a"/>
+  <text x="32" y="21" font-family="'Archivo', 'Segoe UI', system-ui, -apple-system, Helvetica, Arial, sans-serif" font-size="13.5" fill="#eef0f2">High-priority action &quot;Mirrors: fix at Riverside Depot&quot; is 272 days overdue.</text>
+</g>
+<g transform="translate(32,342)">
+  <rect width="816" height="32" rx="6" fill="#1f2328"/>
+  <circle cx="16" cy="16" r="5" fill="#cfee3a"/>
+  <text x="32" y="21" font-family="'Archivo', 'Segoe UI', system-ui, -apple-system, Helvetica, Arial, sans-serif" font-size="13.5" fill="#eef0f2">High-priority action &quot;Emergency exits clear and unobstructed: fix at Southbank Depot&quot; is 242 days overdue.</text>
+</g>
+<text x="32" y="408" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#a9afb6">failed-item rate = 29 failed / 486 answered items  ·  2 missed scheduled inspections  ·  11 actions created, 7 completed</text>
+</svg>
