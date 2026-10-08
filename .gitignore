@@ -1,0 +1,23 @@
+node_modules/
+dist/
+coverage/
+.env
+.env.*
+!.env.example
+*.log
+.safetyculture-mcp/
+audit.jsonl
+.cache/
+/exports/
+# Never commit captured API responses. Test fixtures must be synthetic.
+captures/
+*.har
+.gates/
+.worktrees/
+.claude/worktrees/
+mcpb/build/
+*.mcpb
+
+# Internal working files (kept locally, not published)
+docs/waves/
+STATE.md

@@ -1,0 +1,66 @@
+{
+  "name": "safetyculture-mcp",
+  "version": "0.1.0",
+  "description": "Unofficial Model Context Protocol server for Mitti (formerly SafetyCulture): inspections, actions, issues, assets, schedules, training and analytics for Claude, Codex, Cursor and any MCP client.",
+  "type": "module",
+  "bin": {
+    "safetyculture-mcp": "dist/index.js"
+  },
+  "main": "dist/index.js",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "SECURITY.md",
+    "CHANGELOG.md",
+    "server.json"
+  ],
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:live": "vitest run --config vitest.live.config.ts",
+    "lint:secrets": "node scripts/scan-secrets.mjs",
+    "docs:tools": "tsx scripts/gen-tool-docs.ts",
+    "inspect": "npx @modelcontextprotocol/inspector node dist/index.js",
+    "build:mcpb": "tsup --config mcpb/tsup.mcpb.config.ts && node -e \"const fs=require('fs');for(const f of ['mcpb/manifest.json','LICENSE','README.md'])fs.copyFileSync(f,'mcpb/build/'+f.split('/').pop());fs.writeFileSync('mcpb/build/package.json','{\\\"type\\\":\\\"module\\\"}')\" && npx -y @anthropic-ai/mcpb@2.1.2 pack mcpb/build safetyculture-mcp.mcpb"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "safetyculture",
+    "mitti",
+    "iauditor",
+    "ehs",
+    "inspections",
+    "claude",
+    "codex",
+    "ai"
+  ],
+  "license": "MIT",
+  "author": "Zerub Roberts",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zerubroberts/safetyculture-mcp-server.git"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsup": "^8.5.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  },
+  "mcpName": "io.github.zerubroberts/safetyculture-mcp",
+  "homepage": "https://github.com/zerubroberts/safetyculture-mcp-server#readme",
+  "bugs": {
+    "url": "https://github.com/zerubroberts/safetyculture-mcp-server/issues"
+  }
+}
