@@ -14,3 +14,4 @@ captures/
 *.har
 .gates/
 .worktrees/
+.claude/worktrees/
