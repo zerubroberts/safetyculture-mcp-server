@@ -18,7 +18,11 @@ async function main() {
     else if (a === "--pii") env.SC_PII = next();
     else if (a === "--port") env.SC_HTTP_PORT = next();
     else if (a === "--host") env.SC_HTTP_HOST = next();
+    else if (a === "--demo") env.SC_DEMO = "true";
   }
+
+  // The CLI commands (doctor) build their own API client: route the demo host to the demo API.
+  if (/^(1|true|yes|on)$/i.test(env.SC_DEMO?.trim() ?? "")) (await import("./demo/fetch.js")).installDemoFetch();
 
   const command = argv.find((a) => !a.startsWith("-") && !/^\d+$/.test(a));
   if (command && command !== "serve" && command !== "http") {

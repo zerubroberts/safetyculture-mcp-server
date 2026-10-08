@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createCacheProvider } from "./cache/index.js";
 import { ScClient } from "./core/client.js";
 import type { Config } from "./core/config.js";
+import { createDemoFetch } from "./demo/fetch.js";
 import { createRegistry, defineTool, formatResult, selectTools, TOOLSETS, type AnyToolSpec, type ToolContext, type ToolsetId } from "./core/registry.js";
 import { registerPrompts } from "./prompts.js";
 import { registerResources } from "./resources.js";
@@ -33,7 +34,7 @@ export function buildServer(config: Config, opts: { fetch?: typeof fetch; tools?
   );
   setPseudonymKey(process.env.SC_PSEUDONYM_KEY ?? config.apiToken);
   const ctx: ToolContext = {
-    client: new ScClient(config, opts.fetch),
+    client: new ScClient(config, opts.fetch ?? (config.demo ? createDemoFetch() : undefined)),
     config,
     audit: new AuditLog(config.auditLog),
     cache: undefined as unknown as ToolContext["cache"],

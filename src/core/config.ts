@@ -18,6 +18,8 @@ export type PiiLevel = (typeof PII_LEVELS)[number];
 
 export interface Config {
   apiToken: string;
+  /** SC_DEMO: serve the synthetic demo organisation (src/demo) instead of calling the API. */
+  demo: boolean;
   baseUrl: string;
   mode: Mode;
   toolsets: string[] | "all";
@@ -61,7 +63,9 @@ export class ConfigError extends Error {}
  * Secrets are never echoed back in error messages.
  */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env, opts: { requireToken?: boolean } = {}): Config {
-  const token = env.SC_API_TOKEN ?? env.SAFETYCULTURE_API_TOKEN ?? env.MITTI_API_TOKEN ?? "";
+  const demo = bool(env.SC_DEMO);
+  // Demo mode needs no token: a fixed placeholder is sent to the in-process demo API only.
+  const token = demo ? "demo-mode-no-token" : (env.SC_API_TOKEN ?? env.SAFETYCULTURE_API_TOKEN ?? env.MITTI_API_TOKEN ?? "");
 
   // SC_ENABLE_WRITES / SC_ENABLE_DESTRUCTIVE are friendlier aliases for SC_MODE.
   let mode: string = env.SC_MODE ?? "read-only";
@@ -72,7 +76,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, opts: { require
 
   const parsed = EnvSchema.safeParse({
     token: opts.requireToken === false && !token ? "placeholder-token" : token,
-    baseUrl: env.SC_API_BASE_URL ?? "https://api.mitti.com",
+    baseUrl: demo ? "https://demo.safetyculture-mcp.invalid" : (env.SC_API_BASE_URL ?? "https://api.mitti.com"),
     mode,
     pii: env.SC_PII ?? "contact",
   });
@@ -81,16 +85,18 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, opts: { require
   }
 
   const toolsetsRaw = list(env.SC_TOOLSETS);
-  const dataDir = env.SC_DATA_DIR ?? join(homedir(), ".safetyculture-mcp");
+  // Demo mode keeps its cache and audit log apart from a real organisation's.
+  const dataDir = env.SC_DATA_DIR ?? join(homedir(), ".safetyculture-mcp", ...(demo ? ["demo"] : []));
 
   return {
     apiToken: parsed.data.token,
+    demo,
     baseUrl: parsed.data.baseUrl.replace(/\/+$/, ""),
     mode: parsed.data.mode,
     toolsets: toolsetsRaw.length === 0 ? ["default"] : toolsetsRaw.includes("all") ? "all" : toolsetsRaw,
     pii: parsed.data.pii,
     maxResultChars: Number(env.SC_MAX_RESULT_CHARS ?? 60_000),
-    requestsPerSecond: Number(env.SC_REQUESTS_PER_SECOND ?? 8),
+    requestsPerSecond: Number(env.SC_REQUESTS_PER_SECOND ?? (demo ? 200 : 8)),
     timeoutMs: Number(env.SC_TIMEOUT_MS ?? 30_000),
     maxRetries: Number(env.SC_MAX_RETRIES ?? 4),
     dataDir,
