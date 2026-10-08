@@ -2,7 +2,7 @@
 
 All sites
 
-Organisation **2a44c2ca31** · Period **last 7 days (2026-10-02 to 2026-10-08)** · Generated **2026-10-08 03:00 UTC** · Data from Mitti via safetyculture-mcp
+Organisation **2a44c2ca31** · Period **last 7 days (2026-10-02 to 2026-10-08)** · Generated **8 Oct 2026, 03:20 UTC** · Data from Mitti via safetyculture-mcp
 
 ## Needs attention
 
@@ -33,7 +33,7 @@ This period against the previous period of the same length.
 
 | Week starting | Inspections |
 |---|---:|
-| 2026-07-13 | 8 |
+| 2026-07-13 † | 8 |
 | 2026-07-20 | 42 |
 | 2026-07-27 | 41 |
 | 2026-08-03 | 41 |
@@ -45,7 +45,9 @@ This period against the previous period of the same length.
 | 2026-09-14 | 41 |
 | 2026-09-21 | 37 |
 | 2026-09-28 | 43 |
-| 2026-10-05 | 27 |
+| 2026-10-05 † | 27 |
+
+_† partial week: the first or last bucket covers fewer days, so its count reads lower for that reason alone._
 
 ## Top failed items
 
@@ -86,17 +88,17 @@ This period against the previous period of the same length.
 
 ## Data coverage
 
-As of 2026-10-08T03:00:59.407Z. Every figure is computed from these cached feeds; a feed that is missing or partial makes related figures missing or understated, not zero.
+As of 8 Oct 2026, 03:20 UTC. Every figure is computed from these cached feeds; a feed that is missing or partial makes related figures missing or understated, not zero.
 
 | Feed | Rows | Last synced | Coverage |
 |---|---:|---|---|
-| inspections | 1,809 | 2026-10-08T03:00:55.457Z | complete |
-| inspection\_items | 32,165 | 2026-10-08T03:00:56.828Z | complete |
-| actions | 431 | 2026-10-08T03:00:56.852Z | complete |
-| issues | 120 | 2026-10-08T03:00:56.910Z | complete |
-| schedule\_occurrences | 384 | 2026-10-08T03:00:56.986Z | complete |
-| sites | 15 | 2026-10-08T03:00:56.921Z | complete |
-| templates | 10 | 2026-10-08T03:00:56.951Z | complete |
+| inspections | 1,809 | 8 Oct 2026, 03:20 UTC | complete |
+| inspection\_items | 32,165 | 8 Oct 2026, 03:20 UTC | complete |
+| actions | 431 | 8 Oct 2026, 03:20 UTC | complete |
+| issues | 120 | 8 Oct 2026, 03:20 UTC | complete |
+| schedule\_occurrences | 384 | 8 Oct 2026, 03:20 UTC | complete |
+| sites | 15 | 8 Oct 2026, 03:20 UTC | complete |
+| templates | 10 | 8 Oct 2026, 03:20 UTC | complete |
 
 **Method**
 
@@ -105,7 +107,6 @@ As of 2026-10-08T03:00:59.407Z. Every figure is computed from these cached feeds
 - Changes vs the previous period are only shown when both periods have at least 20 observations.
 - Lower issue counts can mean less reporting, not fewer hazards.
 - Directions are stated only when both periods have at least 20 observations; otherwise "too few to compare".
-- Lower issue counts can mean less reporting, not fewer hazards.
 - Open overdue actions are a snapshot as of now, not a period figure.
 
 ---

@@ -2,7 +2,7 @@
 
 All sites
 
-Organisation **2a44c2ca31** · Period **last 12 months (2025-10-09 to 2026-10-08)** · Generated **2026-10-08 03:01 UTC** · Data from Mitti via safetyculture-mcp
+Organisation **2a44c2ca31** · Period **last 12 months (2025-10-09 to 2026-10-08)** · Generated **8 Oct 2026, 03:20 UTC** · Data from Mitti via safetyculture-mcp
 
 ## Summary
 
@@ -25,7 +25,7 @@ This period against the previous period of the same length.
 
 | Month | Inspections |
 |---|---:|
-| 2025-10 | 75 |
+| 2025-10 † | 75 |
 | 2025-11 | 91 |
 | 2025-12 | 107 |
 | 2026-01 | 110 |
@@ -37,13 +37,15 @@ This period against the previous period of the same length.
 | 2026-07 | 201 |
 | 2026-08 | 175 |
 | 2026-09 | 182 |
-| 2026-10 | 44 |
+| 2026-10 † | 44 |
+
+_† partial month: the first or last bucket covers fewer days, so its count reads lower for that reason alone._
 
 *Average inspection score per month: trend flat*
 
 | Month | Average score |
 |---|---:|
-| 2025-10 | 93.9% |
+| 2025-10 † | 93.9% |
 | 2025-11 | 93.7% |
 | 2025-12 | 93.8% |
 | 2026-01 | 93.5% |
@@ -55,7 +57,9 @@ This period against the previous period of the same length.
 | 2026-07 | 94.2% |
 | 2026-08 | 95.6% |
 | 2026-09 | 95.4% |
-| 2026-10 | 93.8% |
+| 2026-10 † | 93.8% |
+
+_† partial month: the first or last bucket covers fewer days, so its count reads lower for that reason alone._
 
 ## Failed-item Pareto
 
@@ -186,17 +190,17 @@ Items ranked by failed answers; the dashed line shows the cumulative share of al
 
 ## Data coverage
 
-As of 2026-10-08T03:01:00.481Z. Every figure is computed from these cached feeds; a feed that is missing or partial makes related figures missing or understated, not zero.
+As of 8 Oct 2026, 03:20 UTC. Every figure is computed from these cached feeds; a feed that is missing or partial makes related figures missing or understated, not zero.
 
 | Feed | Rows | Last synced | Coverage |
 |---|---:|---|---|
-| inspections | 1,809 | 2026-10-08T03:00:55.457Z | complete |
-| inspection\_items | 32,165 | 2026-10-08T03:00:56.828Z | complete |
-| actions | 431 | 2026-10-08T03:00:56.852Z | complete |
-| issues | 120 | 2026-10-08T03:00:56.910Z | complete |
-| schedule\_occurrences | 384 | 2026-10-08T03:00:56.986Z | complete |
-| sites | 15 | 2026-10-08T03:00:56.921Z | complete |
-| templates | 10 | 2026-10-08T03:00:56.951Z | complete |
+| inspections | 1,809 | 8 Oct 2026, 03:20 UTC | complete |
+| inspection\_items | 32,165 | 8 Oct 2026, 03:20 UTC | complete |
+| actions | 431 | 8 Oct 2026, 03:20 UTC | complete |
+| issues | 120 | 8 Oct 2026, 03:20 UTC | complete |
+| schedule\_occurrences | 384 | 8 Oct 2026, 03:20 UTC | complete |
+| sites | 15 | 8 Oct 2026, 03:20 UTC | complete |
+| templates | 10 | 8 Oct 2026, 03:20 UTC | complete |
 
 **Method**
 
