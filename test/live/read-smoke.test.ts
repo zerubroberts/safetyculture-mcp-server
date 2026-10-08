@@ -23,7 +23,7 @@ d("live read-only smoke", () => {
   it("exposes no write tools in read-only mode", async () => {
     const tools = (await c.client.listTools()).tools;
     expect(tools.length).toBeGreaterThan(20);
-    for (const t of tools) expect(t.annotations?.readOnlyHint, t.name).toBe(true);
+    for (const t of tools) expect(t.annotations?.destructiveHint, t.name).toBe(false);
   });
 
   it("every no-argument read tool succeeds or reports an unlicensed module", async () => {

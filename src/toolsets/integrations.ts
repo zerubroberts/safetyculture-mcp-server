@@ -97,6 +97,7 @@ export const integrationsTools: AnyToolSpec[] = [
     title: "Export a BI bundle (Power BI / Qlik / Excel)",
     toolset: "integrations",
     access: "read",
+    localWrite: true,
     description:
       "Writes a folder with a star schema as CSV (inspections, inspection items, actions, issues, schedule occurrences, sites, templates, users, dates), a manifest, a Power Query M script, a Qlik load script and a README. Uses the local cache (synced first if older than an hour); only local files are written.",
     input: {

@@ -29,6 +29,7 @@ export const reportsTools: AnyToolSpec[] = [
     title: "Weekly safety pulse report",
     toolset: "reports",
     access: "read",
+    localWrite: true,
     description:
       "Writes a one-page safety pulse (HTML and Markdown) to the local export folder: KPI tiles with changes, a 12-week inspection chart, top failed items, overdue actions and an attention list. Returns the file paths and headline numbers.",
     input: {
@@ -48,6 +49,7 @@ export const reportsTools: AnyToolSpec[] = [
     title: "Audit evidence pack",
     toolset: "reports",
     access: "read",
+    localWrite: true,
     description:
       "Writes an audit or regulator evidence pack (HTML and Markdown) for a set of sites and period: inspection volume and score trend, failed-item Pareto, action backlog and closure, issues by category, schedule compliance when data exists, and a data coverage appendix.",
     input: {
@@ -67,6 +69,7 @@ export const reportsTools: AnyToolSpec[] = [
     title: "Site scorecard report",
     toolset: "reports",
     access: "read",
+    localWrite: true,
     description:
       "Writes a scorecard for one site (HTML and Markdown): KPI tiles, monthly trend, top failed items, open actions, issues by category and an inspector activity summary.",
     input: {

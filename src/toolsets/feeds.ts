@@ -104,6 +104,7 @@ export const feedsTools: AnyToolSpec[] = [
     title: "Sync the local cache",
     toolset: "feeds",
     access: "read",
+    localWrite: true,
     core: true,
     description:
       "Pulls Data Feeds into the local analytics cache (only the local cache file is written; nothing changes in Mitti). Incremental by default; full re-pulls everything. Returns per-feed rows fetched, completeness and errors.",
@@ -190,6 +191,7 @@ export const feedsTools: AnyToolSpec[] = [
     title: "Export a cached feed to CSV / JSONL",
     toolset: "feeds",
     access: "read",
+    localWrite: true,
     core: true,
     description:
       "Writes a cached feed, or a filtered subset (period on a date field, sites, templates), to a CSV or JSONL file in the export folder and returns the path, row count and columns. Syncs the feed first if it is older than an hour. Emails/names follow the privacy level (SC_PII).",

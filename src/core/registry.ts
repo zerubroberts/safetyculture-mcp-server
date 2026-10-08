@@ -70,6 +70,11 @@ export interface ToolSpec<S extends z.ZodRawShape = z.ZodRawShape> {
   core?: boolean;
   /** Safe to call twice with the same arguments (PUT-style updates). */
   idempotent?: boolean;
+  /**
+   * Changes nothing in Mitti but writes local state (cache, export or report files). Available in
+   * read-only mode, yet reported to clients with readOnlyHint=false so they can ask before running it.
+   */
+  localWrite?: boolean;
   input: S;
   /** Destructive tools must describe the change without making it. */
   plan?: (args: Args<S>, ctx: ToolContext) => Promise<ToolResult>;
@@ -198,7 +203,7 @@ export function createRegistry(server: McpServer, ctx: ToolContext): Registry {
         inputSchema: input,
         annotations: {
           title: spec.title,
-          readOnlyHint: spec.access === "read",
+          readOnlyHint: spec.access === "read" && !spec.localWrite,
           destructiveHint: spec.access === "destructive",
           idempotentHint: spec.access === "read" || Boolean(spec.idempotent),
           openWorldHint: true,
