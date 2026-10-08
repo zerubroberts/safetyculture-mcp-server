@@ -21,3 +21,5 @@ mcpb/build/
 # Internal working files (kept locally, not published)
 docs/waves/
 STATE.md
+RESULT.md
+BLOCKED.md
