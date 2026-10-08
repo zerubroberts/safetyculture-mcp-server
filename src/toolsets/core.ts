@@ -103,7 +103,9 @@ export const coreTools = [
       if (/[?#\\]/.test(path) || /^\/\//.test(path) || decoded.includes("..") || decoded.includes("%") || decodeURIComponent(resolved) !== decoded)
         throw new ToolError("Invalid path. Pass a plain API path without dot segments, encoding tricks or a query string (use `query` for parameters).");
       // Some GET routes create artefacts (public report links, exports): never reachable here.
-      if (/(web_report_link|shared_link|deep_link|pdf_report|\/export|:export|signed_url|download)/i.test(decoded))
+      // Deliberately broad (substring match): a false refusal costs a dedicated tool call; a miss
+      // mints a public link.
+      if (/(report_link|share|deep_link|public_link|pdf|export|signed_url|download|presign|attachment_url)/i.test(decoded))
         throw new ToolError("That path creates a link or export. Use the dedicated tool (it is classed as a write and needs SC_MODE=write).");
       if (!GET_ALLOWLIST.some((p) => decoded.startsWith(p)))
         throw new ToolError(`Path not allowed. Allowed prefixes: ${GET_ALLOWLIST.join(", ")}`);

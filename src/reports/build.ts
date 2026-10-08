@@ -189,13 +189,13 @@ export function buildAuditPack(cache: CacheReader, args: { period?: string; site
   const completed = computeTrend(cache, { metric: "actions_completed", grain: "month", period, site_ids: args.site_ids }, now).result.table;
   const sm = sched.metrics;
   const noSched = feedProblem(cache, "schedule_occurrences");
-  const hasSched = sm.due !== null && !noSched;
+  const hasSched = sm.due !== null && !noSched && cache.rows("schedule_occurrences").length > 0;
   const noInspRates = feedProblem(cache, "inspections");
 
   const schedBlocks: Block[] = noSched
     ? [unavailableBlock(`${unavailableSentence("Schedule compliance", noSched)} This is not 0% or 100% compliance.`)]
     : !hasSched
-    ? [{ kind: "text", text: "No scheduling data in the cache (the schedule occurrences feed is empty), so no compliance figure is reported. This is not 0% or 100% compliance." }]
+    ? [{ kind: "text", text: "No scheduling data in the cache: the schedule occurrences feed is synced and empty, so nothing was scheduled and no compliance rate is reported. This is not 0% or 100% compliance." }]
     : [
         {
           kind: "kpis",

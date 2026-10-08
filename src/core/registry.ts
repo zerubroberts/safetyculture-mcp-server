@@ -2,7 +2,7 @@ import type { McpServer, RegisteredTool } from "@modelcontextprotocol/sdk/server
 import { z } from "zod";
 import { AuditLog } from "../security/audit.js";
 import { ConfirmTokens } from "../security/confirm.js";
-import { derivePseudonymKey, maskText, redactSecrets, sanitize } from "../security/redact.js";
+import { applyReplacements, derivePseudonymKey, maskFreeText, maskText, redactSecrets, sanitize } from "../security/redact.js";
 import { wrapUntrusted } from "../security/untrusted.js";
 import type { CacheReader, CacheWriter, FeedName } from "../cache/contract.js";
 import type { ScClient } from "./client.js";
@@ -142,21 +142,26 @@ export function formatResult(result: ToolResult, cfg: Pick<Config, "pii" | "maxR
   if (clean === undefined) return `${head}${wrapUntrusted(summary)}`;
   let json = JSON.stringify(clean);
   let note = "";
+  let detail = "";
   if (json.length > cfg.maxResultChars) {
     const shrunk = shrink(clean, cfg.maxResultChars);
     json = JSON.stringify(shrunk.value);
-    note = `\n\nNote: output trimmed to fit (${shrunk.note}). Narrow the filters, request a smaller limit, or use an export tool (sc_export_dataset) for the full data set.`;
+    // Which lists were cut is derived from record keys, so it stays inside the envelope; the text
+    // outside is fixed server wording.
+    detail = `\n\nTrimmed: ${shrunk.note}`;
+    note =
+      "\n\nNote: output trimmed to fit the size limit (the longest lists were shortened). Narrow the filters, request a smaller limit, or use an export tool (sc_export_dataset) for the full data set.";
   }
-  return `${head}${wrapUntrusted(`${summary}\n\n${json}`)}${note}`;
+  return `${head}${wrapUntrusted(`${summary}${detail}\n\n${json}`)}${note}`;
 }
 
-function applyReplacements(text: string, replaced: Map<string, string>): string {
-  let out = text;
-  // Longest first, so "Alex Carter" is replaced before "Alex".
-  for (const [original, alias] of [...replaced.entries()].sort((a, b) => b[0].length - a[0].length)) {
-    if (original.length >= 2) out = out.split(original).join(alias);
-  }
-  return out;
+/** The summary as stored locally (audit log): same masking and name replacement as tool output. */
+function privateSummary(result: ToolResult, cfg: Pick<Config, "pii" | "apiToken">): string {
+  const key = keyFor(cfg);
+  const replaced = new Map<string, string>();
+  if (result.data !== undefined) sanitize(result.data, cfg.pii, { key, collect: replaced });
+  const summary = maskFreeText(result.summary, cfg.pii, key);
+  return cfg.pii === "strict" ? applyReplacements(summary, replaced) : summary;
 }
 
 /** Repeatedly halves the largest array until the JSON fits. */
@@ -248,12 +253,12 @@ export function createRegistry(server: McpServer, ctx: ToolContext): Registry {
               if (!confirm.verify(spec.name, args, confirm_token))
                 throw new ToolError("confirm_token is invalid, expired, or the arguments changed since the dry run. Run the dry run again.");
               result = await spec.run(args, ctx);
-              await ctx.audit.record({ tool: spec.name, access: "destructive", phase: "executed", args, result: result.summary });
+              await ctx.audit.record({ tool: spec.name, access: "destructive", phase: "executed", args, result: privateSummary(result, ctx.config) });
             }
           } else {
             result = await spec.run(args, ctx);
             if (spec.access === "write")
-              await ctx.audit.record({ tool: spec.name, access: "write", phase: "executed", args, result: result.summary });
+              await ctx.audit.record({ tool: spec.name, access: "write", phase: "executed", args, result: privateSummary(result, ctx.config) });
           }
           return { content: [{ type: "text" as const, text: formatResult(result, ctx.config) }] };
         } catch (err) {
@@ -263,7 +268,7 @@ export function createRegistry(server: McpServer, ctx: ToolContext): Registry {
               access: spec.access,
               phase: "failed",
               args,
-              error: err instanceof Error ? err.message : String(err),
+              error: maskFreeText(err instanceof Error ? err.message : String(err), ctx.config.pii, keyFor(ctx.config)),
             });
           return { isError: true, content: [{ type: "text" as const, text: errorText(err, ctx.config) }] };
         }
@@ -282,7 +287,7 @@ export function createRegistry(server: McpServer, ctx: ToolContext): Registry {
  * text, names, emails), so they are masked with the privacy policy and wrapped as untrusted data.
  */
 export function errorText(err: unknown, cfg?: Pick<Config, "pii" | "apiToken">): string {
-  const mask = (s: string) => (cfg ? maskText(s, cfg.pii, keyFor(cfg)) : redactSecrets(s));
+  const mask = (s: string) => (cfg ? maskFreeText(s, cfg.pii, keyFor(cfg)) : redactSecrets(s));
   if (err instanceof ToolError) return wrapUntrusted(mask(err.message));
   if (err instanceof z.ZodError) return `Invalid arguments: ${err.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`;
   if (err instanceof ScApiError) return wrapUntrusted(mask(err.message));

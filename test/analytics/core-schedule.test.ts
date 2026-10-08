@@ -116,7 +116,7 @@ describe("analyzeScheduleCompliance", () => {
     const { result, summary } = analyzeScheduleCompliance(c, {}, NOW);
     expect(summary).toMatch(/^Nothing was scheduled/);
     expect(result.metrics.compliance_pct).toBeNull();
-    expect(result.metrics.due).toBeNull();
+    expect(result.metrics).toMatchObject({ due: 0, on_time: 0, late: 0, missed: 0 });
     expect(result.table).toEqual([]);
   });
 

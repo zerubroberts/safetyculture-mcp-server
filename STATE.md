@@ -3,11 +3,11 @@
 Updated 2026-10-08 by the orchestrator (Claude Opus 5.5, PC).
 
 ## Where we are
-- Wave 0 + 1 DONE and merged: 126 tools, cache + sync, 13 analytics, 3 reports, exports, demo org, MCPB extension, Docker. 388 tests.
-- Wave 2 IN FLIGHT: landing page (SITE-1), data-QA independent audit, security re-verification pass 2.
-- Reviews done: security verification pass 1 (6 refuted -> fixed with regression tests), Codex code review (24 findings -> fixed).
-- Verified installs: Claude Code (connected), Codex (tool call), Docker (healthz/401/initialize). Claude Desktop .mcpb validated + packed.
-- Live tests against the Cast org: read smoke (48 tools), list->get (13 types), write cycle (create/update/dry-run/delete, 0 leftovers).
+- Waves 0, 1 and 2 DONE: 126 tools, cache + sync, 13 analytics, 3 reports, exports, demo org, MCPB extension, Docker, README, landing page (design judge SHIP 8.2/8.0), docs, FAQ, guides.
+- 603 unit tests (latest commit 1258ab8). Live Cast suite 6/6 on 2026-10-08 (read smoke, list->get, write cycle with 0 leftovers).
+- Security verification: pass 1 (6 fixed), Codex review (24 fixed), pass 2 (fixed), pass 3 (A-E + minor secret pinning fixed in 1258ab8, regression file test/core/pass3.test.ts).
+- Data QA: independent auditor VERIFIED all metrics on demo + live.
+- Waiting on: Zerub's go to force-push fresh history to the public repo.
 
 ## Linear
 Project P-PRD-49. Wave 1 PRD-425 (+426..432), wave 2 PRD-433.
@@ -16,6 +16,7 @@ Project P-PRD-49. Wave 1 PRD-425 (+426..432), wave 2 PRD-433.
 Name stays "SafetyCulture MCP"; publish = fresh history to the same repo after Zerub's final go; live write tests allowed (tiny, cleaned up).
 
 ## Open follow-ups
+- Known, accepted: bulk_update with filters re-resolves targets at execution time (dry run shows the plan, execution re-queries); no concurrency cap on sc_query_cache child processes; HTTP mode shares one export folder across callers.
 - MCP protocol 2026-07-28 needs SDK v2 (@modelcontextprotocol/server); SDK 1.32 speaks 2025-11-25 (clients fall back).
 - npm publish needs NPM_TOKEN secret; registry listing via mcp-publisher after publish.
 - ChatGPT web needs public HTTPS + OAuth (not provided by this server's bearer mode).

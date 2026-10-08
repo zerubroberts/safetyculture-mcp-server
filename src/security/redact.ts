@@ -106,6 +106,37 @@ function looksLikePhone(raw: string): boolean {
   return m.startsWith("+") || /^[(0]/.test(m) || /\d[\s().]\d/.test(m);
 }
 
+/** Replaces collected originals with their pseudonyms, longest first ("Alex Carter" before "Alex"). */
+export function applyReplacements(text: string, replaced: Map<string, string>): string {
+  let out = text;
+  for (const [original, alias] of [...replaced.entries()].sort((a, b) => b[0].length - a[0].length)) {
+    if (original.length >= 2) out = out.split(original).join(alias);
+  }
+  return out;
+}
+
+/**
+ * maskText plus, at strict, names inside any JSON quoted in the text (upstream error bodies,
+ * audit entries): the JSON is run through sanitize() and the names it pseudonymises are replaced
+ * in the whole string. Names in plain prose without structure cannot be detected.
+ */
+export function maskFreeText(s: string, pii: PiiLevel, key?: Buffer): string {
+  let out = maskText(s, pii, key);
+  if (pii !== "strict") return out;
+  const replaced = new Map<string, string>();
+  for (const [open, close] of [["{", "}"], ["[", "]"]] as const) {
+    const a = s.indexOf(open);
+    const b = s.lastIndexOf(close);
+    if (a < 0 || b <= a) continue;
+    try {
+      sanitize(JSON.parse(s.slice(a, b + 1)), pii, { key, collect: replaced });
+    } catch {
+      // not JSON: nothing structured to learn names from
+    }
+  }
+  return applyReplacements(out, replaced);
+}
+
 /** Masks secrets, emails and phone numbers inside free text (used for summaries too). */
 export function maskText(s: string, pii: PiiLevel, key?: Buffer): string {
   let out = redactSecrets(s);

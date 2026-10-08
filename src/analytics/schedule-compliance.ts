@@ -188,7 +188,10 @@ export function analyzeScheduleCompliance(
       filters,
       cache,
       feeds: [...feeds],
-      metrics: { due: null, on_time: null, late: null, missed: null, compliance_pct: null },
+      // Unreadable: every figure withheld. Synced and empty: true zero counts, but no rate (0 of 0).
+      metrics: problem
+        ? { due: null, on_time: null, late: null, missed: null, compliance_pct: null }
+        : { due: 0, on_time: 0, late: 0, missed: 0, compliance_pct: null },
       table: [],
       method: problem ? "Compliance needs schedule occurrences; the feed could not be read." : "Compliance needs schedule occurrences; none are cached.",
       caveats: [

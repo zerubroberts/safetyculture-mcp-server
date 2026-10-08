@@ -96,7 +96,7 @@ describe("report sections (core analytics underneath)", () => {
   it("schedule compliance from the core analytic", () => {
     const s = scheduleSummary(cache(), "last 7 days", undefined, NOW);
     expect(s.metrics).toMatchObject({ due: 4, on_time: 2, late: 1, missed: 1, compliance_pct: 50, late_pct: 25, missed_pct: 25 });
-    expect(scheduleSummary(new FakeCache().seed("schedule_occurrences", []), "last 7 days", undefined, NOW).metrics.due).toBeNull();
+    expect(scheduleSummary(new FakeCache().seed("schedule_occurrences", []), "last 7 days", undefined, NOW).metrics.due).toBe(0);
   });
 
   it("pulse attention list is the core top three, by severity", () => {
