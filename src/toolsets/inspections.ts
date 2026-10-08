@@ -470,7 +470,7 @@ export const inspectionsTools = [
       const limit = a.limit ?? 50;
       // The per-media token only works on an authenticated /media/v1/download call. It is
       // projected as media_token because the output sanitizer always strips keys named "token".
-      const page = all.slice(0, limit).map((m) => ({ id: m.id, media_token: m.token, filename: m.filename, media_type: m.media_type }));
+      const page = all.slice(0, limit).map((m) => ({ id: m.id, media_token: m.token, filename: m.filename, media_type: friendlyMediaType(m.media_type) }));
       return {
         summary: `${all.length} media files on inspection ${a.inspection_id}; showing ${page.length}.`,
         data: { inspection_id: a.inspection_id, total: all.length, media: page },
@@ -736,3 +736,10 @@ export const inspectionsTools = [
     },
   }),
 ];
+
+/** MEDIA_TYPE_IMAGE -> image, matching the values sc_get_media_url accepts. */
+function friendlyMediaType(t?: string): string | undefined {
+  if (!t) return undefined;
+  const map: Record<string, string> = { MEDIA_TYPE_IMAGE: "image", MEDIA_TYPE_VIDEO: "video", MEDIA_TYPE_PDF: "pdf", MEDIA_TYPE_DOCX: "word", MEDIA_TYPE_XLSX: "excel", MEDIA_TYPE_PPTX: "slides", MEDIA_TYPE_CSV: "csv" };
+  return map[t] ?? t.replace(/^MEDIA_TYPE_/, "").toLowerCase();
+}

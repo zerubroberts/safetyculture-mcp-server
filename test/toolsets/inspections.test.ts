@@ -204,7 +204,7 @@ describe("inspections toolset", () => {
     const { call, json } = await connect(api);
     const listed = json((await call("sc_list_inspection_media", { inspection_id: "audit_1" })).text);
     // The per-media token is required by sc_get_media_url, so the list must carry it.
-    expect(listed.media).toEqual([{ id: "m-1", media_token: "tok-1", filename: "gate.png", media_type: "MEDIA_TYPE_IMAGE" }]);
+    expect(listed.media).toEqual([{ id: "m-1", media_token: "tok-1", filename: "gate.png", media_type: "image" }]);
     const got = json((await call("sc_get_media_url", { media_id: "m-1", token: listed.media[0].media_token, media_type: "video" })).text);
     expect(got.url).toBe("https://example.test/m-1");
     expect(api.calls[1]).toMatchObject({
