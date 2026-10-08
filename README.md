@@ -152,7 +152,7 @@ Details and threat model: **[SECURITY.md](SECURITY.md)**.
 
 <img src="assets/readme/toolsets.svg" alt="126 tools in 20 toolsets, counted from the tool registry: inspections 15, analytics 13, assets 11, issues 11, actions 8, investigations 7, people 7, feeds 6, schedules 6, sites 6, templates 6, training 6, contractors 5, core 3, reports 3, webhooks 3, documents 2, headsup 2, integrations 2, sensors 2." width="100%">
 
-A fresh read-only install shows **26 tools**, enough for every question above. Add more with `SC_TOOLSETS=default,analytics,assets` (or `all`), or let the assistant call `sc_enable_toolsets`.
+A fresh read-only install shows **25 tools**, enough for every question above. Add more with `SC_TOOLSETS=default,analytics,assets` (or `all`), or let the assistant call `sc_enable_toolsets`.
 
 | Toolset | Covers | Tools |
 |---|---|---|

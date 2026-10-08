@@ -5,7 +5,7 @@ Complete rewrite of the 2025 Python prototype (6 tools) as a TypeScript MCP serv
 
 ### Added
 - 126 tools in 20 toolsets: inspections, templates, actions, issues, investigations and OSHA, assets and maintenance, sites, people, schedules, training, Heads Up, contractors and credentials, documents, sensors, webhooks, data feeds, analytics, reports, integrations. Generated reference: [docs/TOOLS.md](docs/TOOLS.md).
-- Small default tool set (26 read tools) with `SC_TOOLSETS` and the `sc_enable_toolsets` tool for more.
+- Small default tool set (25 read tools) with `SC_TOOLSETS` and the `sc_enable_toolsets` tool for more.
 - Safety model: read-only by default; `SC_MODE=write` and `SC_MODE=full`; dry-run plus single-use confirm tokens for destructive tools; local audit log; secret redaction; keyed pseudonyms for contact details (`SC_PII`); untrusted-data envelope against prompt injection; no telemetry.
 - Local analytics cache on Node's built-in SQLite with incremental, time-budgeted sync of 23 Data Feeds.
 - 13 analyses (safety pulse, failed-item Pareto, action backlog, schedule compliance, credential radar, site league, significance-tested comparisons, trends, template quality, inspector activity, anomalies, action stalls, issue hotspots) and 3 generated HTML/Markdown reports.
