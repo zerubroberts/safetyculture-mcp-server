@@ -1814,7 +1814,7 @@ Access: read
 
 ### `sc_report_monthly_board_pack`
 
-Writes a monthly board pack (HTML and Markdown) for the last full month by default: executive summary, KPI tiles with 12-month sparklines, attention list, volume and score trends, site league with previous-period comparison, per-site trends, action backlog and scheduled-inspection compliance.
+Writes a monthly board pack (HTML and Markdown) for the last full month by default: a three-line brief (what changed, what to watch, what we need), executive summary, KPI tiles with 12-month sparklines, attention list, volume and score trends, site league with previous-period comparison, per-site trends, action backlog and scheduled-inspection compliance. Optional targets are drawn only when given.
 
 Access: read
 
@@ -1822,6 +1822,8 @@ Access: read
 |---|---|---|
 | `period` | string | Time window, e.g. "last 30 days", "last quarter", "2026-Q3", "2026-07", "2026-07-01..2026-09-30", "ytd". Default: last month. |
 | `site_ids` | string[] | One or more site IDs to filter by. |
+| `on_time_target_pct` | number | On-time target for scheduled inspections, in percent. Drawn on the compliance exhibit only when given. |
+| `failed_rate_tolerance_pct` | number | Tolerated failed-item rate, in percent. Drawn on the site failed-item exhibit only when given. |
 
 ### `sc_report_action_backlog`
 
@@ -1844,6 +1846,7 @@ Access: read
 |---|---|---|
 | `period` | string | Time window, e.g. "last 30 days", "last quarter", "2026-Q3", "2026-07", "2026-07-01..2026-09-30", "ytd". Default: last 12 weeks. |
 | `site_ids` | string[] | One or more site IDs to filter by. |
+| `on_time_target_pct` | number | On-time target, in percent. Drawn on the weekly chart and the comparison bars only when given. |
 
 ### `sc_report_inspection_quality`
 
