@@ -27,7 +27,7 @@ export const ids = {
   user: (id: string) => (id.startsWith("user_") ? id : `user_${id.replaceAll("-", "")}`),
   /** Bare UUID with dashes, as used by the v1 services. */
   uuid: (id: string) => {
-    const hex = id.replace(/^(audit|template|user|role|location|site)_/, "").replaceAll("-", "");
+    const hex = id.replace(/^(audit|template|user|role|location|site|scheduleitem)_/, "").replaceAll("-", "");
     return /^[0-9a-f]{32}$/i.test(hex)
       ? `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
       : id;

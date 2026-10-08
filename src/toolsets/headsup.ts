@@ -136,7 +136,7 @@ export const headsupTools = [
     input: {
       heads_up_id: z.string().describe("Heads Up ID (from sc_list_heads_ups)."),
       comments_limit: P.limit(20, 100),
-      users_limit: z.number().int().min(1).max(1000).optional().describe("Max assignees to split into completed / not completed (default 200, max 1000)."),
+      users_limit: z.number().int().min(1).max(100).optional().describe("Max assignees to split into completed / not completed (default and API maximum: 100)."),
     },
     run: async (a, ctx) => {
       const id = a.heads_up_id;
@@ -159,7 +159,7 @@ export const headsupTools = [
         ),
         ctx.client.post<{ users?: RawUser[]; total?: number }>("/announcements/v1/announcement:ListHeadsUpUsers", {
           heads_up_id: id,
-          page_size: Math.min(1000, a.users_limit ?? 200),
+          page_size: Math.min(100, a.users_limit ?? 100),
         }),
         ctx.client
           .post<{ message_response?: { messages?: RawMessage[]; total?: number } }>(

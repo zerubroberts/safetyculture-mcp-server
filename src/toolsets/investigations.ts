@@ -85,9 +85,18 @@ const sortMap = {
   status: "InvestigationsSortFieldStatus",
 } as const;
 
-async function countLinked(ctx: ToolContext, investigationId: string, kind: "actions" | "inspections" | "issues" | "media") {
-  const res = await ctx.client.get<{ count?: number }>(`/incidents/v1/investigations/${encodeURIComponent(investigationId)}/${kind}/count`);
-  return res.count ?? 0;
+/**
+ * Linked-record count, or null when the count endpoint fails. Verified live 2026-10-08: the
+ * actions count endpoint can return HTTP 400 from an upstream filter-validation defect even for
+ * valid investigations, so one failing count must not fail the whole lookup.
+ */
+async function countLinked(ctx: ToolContext, investigationId: string, kind: "actions" | "inspections" | "issues" | "media"): Promise<number | null> {
+  try {
+    const res = await ctx.client.get<{ count?: number }>(`/incidents/v1/investigations/${encodeURIComponent(investigationId)}/${kind}/count`);
+    return res.count ?? 0;
+  } catch {
+    return null;
+  }
 }
 
 // OSHA outcome/type codes from the GetCase reference (oshaservice_getcase).
@@ -261,7 +270,7 @@ export const investigationsTools = [
       const inv = res.investigation;
       if (!inv?.investigation_id) throw new ToolError(`Investigation ${investigation_id} was not found.`);
       return {
-        summary: `Investigation "${inv.title}" (${inv.identifier?.for_display ?? investigation_id}): ${actionCount} actions, ${issueCount} issues, ${inspectionCount} inspections, ${mediaCount} media linked.`,
+        summary: `Investigation "${inv.title}" (${inv.identifier?.for_display ?? investigation_id}): ${[["actions", actionCount], ["issues", issueCount], ["inspections", inspectionCount], ["media", mediaCount]].map(([k, v]) => `${v ?? "unknown number of"} ${k}`).join(", ")} linked.`,
         data: {
           ...projectInvestigation(inv),
           description: inv.description,

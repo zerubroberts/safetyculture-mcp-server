@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { ToolError } from "../core/errors.js";
-import { P } from "../core/params.js";
+import { ids, P } from "../core/params.js";
 import { defineTool } from "../core/registry.js";
 import { parsePeriod } from "../core/time.js";
 
@@ -272,7 +272,7 @@ export const schedulesTools = [
         };
         target_summary?: { target_type?: string; total_count?: number };
         creator?: { id?: string; name?: string };
-      }>(`/scheduling/v1/schedules/${encodeURIComponent(schedule_id)}`);
+      }>(`/scheduling/v1/schedules/${encodeURIComponent(ids.uuid(schedule_id))}`);
       if (!s.id) throw new ToolError(`Schedule ${schedule_id} was not found.`);
       return {
         summary: `Schedule "${s.title}" is ${normaliseScheduleStatus(s.status)}.`,
@@ -356,7 +356,7 @@ export const schedulesTools = [
     },
     run: async (a, ctx) => {
       if (a.site_ids?.length && a.asset_ids?.length) throw new ToolError("Pass either site_ids or asset_ids, not both.");
-      await ctx.client.patch(`/scheduling/v1/schedules/${encodeURIComponent(a.schedule_id)}/pause`, {
+      await ctx.client.patch(`/scheduling/v1/schedules/${encodeURIComponent(ids.uuid(a.schedule_id))}/pause`, {
         ...(a.site_ids?.length ? { sites: { site_ids: a.site_ids } } : {}),
         ...(a.asset_ids?.length ? { assets: { asset_ids: a.asset_ids } } : {}),
       });
@@ -381,7 +381,7 @@ export const schedulesTools = [
     },
     run: async (a, ctx) => {
       if (a.site_ids?.length && a.asset_ids?.length) throw new ToolError("Pass either site_ids or asset_ids, not both.");
-      await ctx.client.patch(`/scheduling/v1/schedules/${encodeURIComponent(a.schedule_id)}/resume`, {
+      await ctx.client.patch(`/scheduling/v1/schedules/${encodeURIComponent(ids.uuid(a.schedule_id))}/resume`, {
         ...(a.site_ids?.length ? { sites: { site_ids: a.site_ids } } : {}),
         ...(a.asset_ids?.length ? { assets: { asset_ids: a.asset_ids } } : {}),
       });
@@ -404,7 +404,7 @@ export const schedulesTools = [
         title?: string;
         status?: string;
         target_summary?: { target_type?: string; total_count?: number };
-      }>(`/scheduling/v1/schedules/${encodeURIComponent(schedule_id)}`);
+      }>(`/scheduling/v1/schedules/${encodeURIComponent(ids.uuid(schedule_id))}`);
       if (!s.id) throw new ToolError(`Schedule ${schedule_id} was not found.`);
       return {
         summary: `Schedule "${s.title}" (${normaliseScheduleStatus(s.status)}) would end and stop generating occurrences.`,
@@ -413,7 +413,7 @@ export const schedulesTools = [
       };
     },
     run: async ({ schedule_id }, ctx) => {
-      await ctx.client.patch(`/scheduling/v1/schedules/${encodeURIComponent(schedule_id)}/end`, {});
+      await ctx.client.patch(`/scheduling/v1/schedules/${encodeURIComponent(ids.uuid(schedule_id))}/end`, {});
       return { summary: `Ended schedule ${schedule_id}. It will no longer generate occurrences.`, data: { id: schedule_id, ended: true } };
     },
   }),
