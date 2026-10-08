@@ -13,7 +13,7 @@ import { analyzeScheduleCompliance } from "../../src/analytics/schedule-complian
 import { analyzeSiteLeague } from "../../src/analytics/league.js";
 import { computeInspectorActivity } from "../../src/analytics/inspectors.js";
 import { computeTrend, siteKey } from "../../src/analytics/trend.js";
-import { buildDashboardData, type DashboardData, type TrendSeries } from "../../src/dashboard/data.js";
+import { buildDashboardData, recentMove, type DashboardData, type TrendSeries } from "../../src/dashboard/data.js";
 import { CLIENT_JS } from "../../src/dashboard/client.js";
 import { DASHBOARD_CSP, embedJson, renderDashboardHtml } from "../../src/dashboard/html.js";
 import { dashboardAppHtml, DASHBOARD_APP_MIME, DASHBOARD_APP_URI } from "../../src/dashboard/app.js";
@@ -234,6 +234,34 @@ describe("dashboard numbers are the analytics' numbers", () => {
       expect(slice.inspections.rows.map((r) => r.failed)).toEqual(f.table.map((r) => r.failed));
       expect(slice.actions.metrics).toEqual(analyzeActionBacklog(c, { period: p.text, site_ids: ["site-2"] }, NOW).result.metrics);
     }
+  });
+
+  it("closed vs completed: closed_other = backlog closed_in_period - pulse actions_completed, both labelled", () => {
+    const closed = Number(analyzeActionBacklog(c, { period: P }, NOW).result.metrics.closed_in_period);
+    const completed = safetyPulse(c, { period: P }, NOW).result.metrics.actions_completed as number;
+    expect(s.actions.completed_in_period).toBe(completed);
+    expect(s.actions.closed_other).toBe(closed - completed);
+    expect(s.actions.answer).toContain(`${closed} closed (${completed} completed, ${closed - completed} closed without completing, such as can't do)`);
+    const out = renderAll(d, "actions");
+    expect(out).toContain("Closed (completed or can&#39;t do)");
+    expect(out).not.toContain("has a completion date");
+  });
+
+  it("recent movement is stated when it runs against the fitted direction", () => {
+    const row = (bucket: string, value: number, partial = false) => ({ bucket, value, partial });
+    const t = [row("2026-08-03", 6), row("2026-08-10", 5), row("2026-08-17", 4), row("2026-08-24", 2.5), row("2026-08-31", 4), row("2026-09-07", 5.7), row("2026-09-14", 9, true)];
+    expect(recentMove(t, "%", "week")).toBe("rising since 24 Aug (2.5% to 5.7%)");
+    expect(recentMove([row("2026-08-03", 5), row("2026-08-10", 5.1), row("2026-08-17", 5), row("2026-08-24", 5.1)], "%", "week")).toBeNull();
+  });
+
+  it("the people headline leads with a very-fast outlier without naming them", () => {
+    const team = s.team;
+    if (team.outlier_index !== null) {
+      const r = team.inspector_rows[team.outlier_index]!;
+      expect(r.very_fast_share).toBeGreaterThanOrEqual(50);
+      expect(team.answer).toMatch(/^One inspector stands out/);
+      expect(team.answer).not.toContain(String(r.inspector_name));
+    } else expect(team.answer).not.toMatch(/stands out/);
   });
 
   it("precomputes every period preset x every site, and adds a requested custom period", () => {

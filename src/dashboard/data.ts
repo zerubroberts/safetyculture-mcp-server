@@ -72,6 +72,11 @@ export interface TrendSeries {
   direction: string | null;
   /** `from` is the bucket's first day (clipped to the window); the next bucket's `from`, or the window end, closes it. */
   points: Array<{ bucket: string; from: string; value: Num; n: number; partial: boolean; change: Num }>;
+  /**
+   * Recent movement among the last six complete buckets, when it runs against or sharpens the fitted direction:
+   * "rising since 24 Aug (2.5% to 5.7%)". Null when the recent buckets are flat or too few. Partial buckets are left out.
+   */
+  recent: string | null;
 }
 
 const TREND_METRICS: TrendMetric[] = ["inspections_completed", "average_score", "failed_item_rate", "issues_created", "actions_created", "actions_completed"];
@@ -132,11 +137,12 @@ function pulseTiles(cache: CacheReader, rows: PulseRow[], maxDaysOverdue: Num, s
 function trendSeries(cache: CacheReader, metric: TrendMetric, grain: Grain, period: Period, siteIds: string[] | undefined, now: Date): TrendSeries {
   const { result, summary } = computeTrend(cache, { metric, grain, period, site_ids: siteIds }, now);
   const unit = metric === "average_score" || metric === "failed_item_rate" ? "%" : "";
-  if (result.metrics.buckets === null) return { unavailable: summary, unit, grain, direction: null, points: [] };
+  if (result.metrics.buckets === null) return { unavailable: summary, unit, grain, direction: null, points: [], recent: null };
   return {
     unavailable: null,
     unit,
     grain,
+    recent: recentMove(result.table, unit, grain),
     direction: result.metrics.direction === null ? null : String(result.metrics.direction),
     points: result.table.map((r, i) => {
       const prev = result.table[i - 1];
@@ -144,6 +150,26 @@ function trendSeries(cache: CacheReader, metric: TrendMetric, grain: Grain, peri
       return { bucket: r.bucket, from: r.from.slice(0, 10), value: r.value, n: r.n, partial: r.partial, change };
     }),
   };
+}
+
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const bucketName = (b: string, grain: Grain) => (grain === "month" ? `${MON[Number(b.slice(5, 7)) - 1]} ${b.slice(0, 4)}` : `${Number(b.slice(8, 10))} ${MON[Number(b.slice(5, 7)) - 1]}`);
+
+/** Lowest (or highest) of the last six complete buckets, and how far the latest complete bucket has moved since. */
+export function recentMove(table: Array<{ bucket: string; value: number | null; partial: boolean }>, unit: string, grain: Grain): string | null {
+  const full = table.filter((r) => !r.partial && r.value !== null).slice(-6) as Array<{ bucket: string; value: number }>;
+  if (full.length < 4) return null;
+  const last = full[full.length - 1]!;
+  const lo = full.reduce((a, b) => (b.value < a.value ? b : a));
+  const hi = full.reduce((a, b) => (b.value > a.value ? b : a));
+  const span = Math.max(...full.map((r) => r.value)) - Math.min(...full.map((r) => r.value));
+  const meaningful = (d: number) => Math.abs(d) >= Math.max(unit ? 0.5 : 2, 0.15 * Math.abs(last.value)) && span > 0;
+  const v = (x: number) => `${x}${unit}`;
+  const loIdx = full.indexOf(lo);
+  const hiIdx = full.indexOf(hi);
+  if (loIdx <= full.length - 3 && meaningful(last.value - lo.value) && last.value > lo.value) return `rising since ${bucketName(lo.bucket, grain)} (${v(lo.value)} to ${v(last.value)})`;
+  if (hiIdx <= full.length - 3 && meaningful(last.value - hi.value) && last.value < hi.value) return `falling since ${bucketName(hi.bucket, grain)} (${v(hi.value)} to ${v(last.value)})`;
+  return null;
 }
 
 /**
@@ -306,22 +332,37 @@ function inspectionsSlice(cache: CacheReader, periodText: string, siteIds: strin
   };
 }
 
-function actionsSlice(cache: CacheReader, periodText: string, siteIds: string[] | undefined, now: Date) {
+/**
+ * Two "done" counts exist and both are shown, labelled: the backlog's closed_in_period counts every action with a
+ * completion date in the period (completed, can't do, anything closed), the pulse's actions_completed counts only
+ * completed ones. The completed actions are a subset of the closed ones (same window, completion date required),
+ * so closed minus completed is the number closed without being completed, such as "can't do".
+ */
+function actionsSlice(cache: CacheReader, periodText: string, siteIds: string[] | undefined, now: Date, completed: Num) {
   const { summary, result } = analyzeActionBacklog(cache, { period: periodText, site_ids: siteIds }, now);
   const m = result.metrics;
   if (m.open === null) return { unavailable: summary, metrics: m, weekly: [], by_site: [], by_priority: [], answer: summary, caveats: result.caveats.filter((c) => !c.startsWith("Feed ")) };
   const oldest = result.oldest_open[0]?.age_days as number | undefined;
   const byPriority = analyzeActionBacklog(cache, { period: periodText, site_ids: siteIds, group_by: "priority" }, now).result.table;
+  const closed = Number(m.closed_in_period);
+  const closedOther = completed !== null && completed <= closed ? closed - completed : null;
+  const closedText =
+    closedOther === null
+      ? `${closed.toLocaleString("en-US")} closed (completed or can't do)`
+      : `${closed.toLocaleString("en-US")} closed (${completed!.toLocaleString("en-US")} completed, ${closedOther.toLocaleString("en-US")} closed without completing, such as can't do)`;
   const answer =
     `${plural(Number(m.open), "open action")}, ${Number(m.overdue).toLocaleString("en-US")} overdue` +
     (oldest !== undefined ? `; the oldest has been open ${plural(oldest, "day")}` : "") +
-    `. ${Number(m.opened_in_period).toLocaleString("en-US")} opened and ${Number(m.closed_in_period).toLocaleString("en-US")} closed in the period, so the backlog ${Number(m.opened_in_period) > Number(m.closed_in_period) ? "grew" : Number(m.opened_in_period) < Number(m.closed_in_period) ? "shrank" : "held level"}.`;
+    `. ${Number(m.opened_in_period).toLocaleString("en-US")} opened and ${closedText} in the period, so the backlog ${Number(m.opened_in_period) > Number(m.closed_in_period) ? "grew" : Number(m.opened_in_period) < Number(m.closed_in_period) ? "shrank" : "held level"}.`;
   return {
     unavailable: null,
     metrics: m,
     weekly: result.weekly,
     by_site: result.table.map((g) => ({ group: g.group, sk: g.key, open: g.open, overdue: g.overdue, no_due_date: g.no_due_date, oldest_age_days: g.oldest_age_days })),
     by_priority: byPriority.map((g) => ({ priority: g.key, open: g.open, overdue: g.overdue })),
+    /** Pulse actions_completed for the same period, and closed_in_period minus it (closed without completing). */
+    completed_in_period: completed,
+    closed_other: closedOther,
     answer,
     caveats: result.caveats.filter((c) => !c.startsWith("Feed ")),
   };
@@ -365,9 +406,19 @@ function teamSlice(cache: CacheReader, periodText: string, siteIds: string[] | u
   const templatesUnavailable = tq.result.metrics.failed_items === null ? tq.summary : null;
   const templates = tq.result.table.map((r) => ({ group: r.group, failed: r.failed, answered: r.answered, rate: r.failure_rate_pct, share: r.share_pct }));
   const worst = [...templates].filter((t) => t.answered >= 20 && t.rate !== null).sort((a, b) => (b.rate ?? 0) - (a.rate ?? 0))[0];
+  // The clearest outlier: most of an inspector's timed inspections far faster than the template's typical time
+  // (the analytic's "very fast" flag). Named only in the table (pseudonymised at strict), never in the sentence.
+  const outlier = result.table
+    .map((r, i) => ({ r, i }))
+    .filter(({ r }) => r.very_fast_eligible >= 5 && (r.very_fast_share ?? 0) >= 50)
+    .sort((a, b) => (b.r.very_fast_share ?? 0) - (a.r.very_fast_share ?? 0) || b.r.very_fast_eligible - a.r.very_fast_eligible)[0];
   const answer = inspectorsUnavailable
     ? inspectorsUnavailable
-    : `${plural(Number(result.metrics.inspectors), "inspector")} completed ${plural(Number(result.metrics.inspections), "inspection")}.` +
+    : outlier
+      ? `One inspector stands out: ${outlier.r.very_fast_share}% of their ${outlier.r.very_fast_eligible} timed inspections took under a quarter of the template's typical time` +
+        (outlier.r.median_duration_seconds !== null ? ` (median ${round(outlier.r.median_duration_seconds / 60, 1)} minutes)` : "") +
+        `. Highlighted below; worth a conversation, not a performance verdict. ${plural(Number(result.metrics.inspectors), "inspector")} completed ${plural(Number(result.metrics.inspections), "inspection")} in all.`
+      : `${plural(Number(result.metrics.inspectors), "inspector")} completed ${plural(Number(result.metrics.inspections), "inspection")}.` +
       (templatesUnavailable ? ` ${templatesUnavailable}` : worst ? ` Highest failed-item rate: "${worst.group}" at ${worst.rate}% of ${worst.answered.toLocaleString("en-US")} answered items.` : "");
   return {
     inspectors_unavailable: inspectorsUnavailable,
@@ -388,7 +439,11 @@ function teamSlice(cache: CacheReader, periodText: string, siteIds: string[] | u
       expected_rate: r.expected_rate_same_templates,
       difference_pp: r.difference_pp,
       very_fast_share: r.very_fast_share,
+      very_fast: r.very_fast,
+      very_fast_eligible: r.very_fast_eligible,
     })),
+    /** Index into inspector_rows of the outlier the headline describes, or null. */
+    outlier_index: outlier ? outlier.i : null,
     templates_unavailable: templatesUnavailable,
     templates,
     answer,
@@ -553,11 +608,12 @@ export function buildDashboardData(base: CacheReader, args: DashboardArgs, now: 
 
 /** Everything that depends on the period and the site filter. */
 function buildSlice(cache: CacheReader, text: string, ids: string[] | undefined, now: Date, window: string, withSites: boolean) {
+  const overview = overviewSlice(cache, text, ids, now);
   return {
     window,
-    overview: overviewSlice(cache, text, ids, now),
+    overview,
     inspections: inspectionsSlice(cache, text, ids, now),
-    actions: actionsSlice(cache, text, ids, now),
+    actions: actionsSlice(cache, text, ids, now, overview.action_tiles.find((t) => t.key === "actions_completed")?.value ?? null),
     schedules: schedulesSlice(cache, text, ids, now, withSites),
     team: teamSlice(cache, text, ids, now),
   };

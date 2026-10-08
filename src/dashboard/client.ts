@@ -31,6 +31,10 @@ var R = (function () {
   /** Fixed decimals so a column or chart reads evenly (10.16, 9.20, 4.70); formatting only, values unchanged. */
   function fmtD(v, dp, unit) { if (v === null || v === undefined || !isFinite(v)) return 'n/a'; var a = Math.abs(Number(v)).toFixed(dp), p = a.split('.'); return (Number(v) < 0 && Number(a) !== 0 ? '\u2212' : '') + grp(Number(p[0])) + (p[1] ? '.' + p[1] : '') + (unit || ''); }
   function signedD(v, dp, unit) { if (v === null || v === undefined || !isFinite(v)) return 'n/a'; return (v > 0 ? '+' : v < 0 ? '−' : '±') + fmtD(Math.abs(v), dp) + (unit || ''); }
+  /** Failed-item rates read at 2 dp on every surface, matching the safety pulse. */
+  function rate(v) { return fmtD(v, 2, '%'); }
+  function rateCol(k, label) { return n(k, label, '%', { h: function (r) { return esc(rate(r[k])); } }); }
+  function trendText(sr) { return sr.direction ? '. Fitted trend: ' + sr.direction + (sr.recent ? '; ' + sr.recent : '') + '.' : ''; }
   function pp(unit) { return unit === '%' ? ' pts' : ''; }
   function href(h) { return h && SAFE.test(h) ? h : null; }
   function ymd(iso) { var p = String(iso).slice(0, 10).split('-'); return { y: +p[0], m: +p[1] - 1, d: +p[2] }; }
@@ -110,6 +114,7 @@ var R = (function () {
     if (tl.unavailable) d = '<div class="d">' + esc(tl.unavailable) + '</div>';
     else if (tl.delta !== null && tl.delta !== undefined) d = '<div class="d ' + cls + '"><span class="ar" aria-hidden="true">' + (tl.delta > 0 ? '▲' : tl.delta < 0 ? '▼' : '●') + '</span>' + esc(signed(tl.delta, pp(unit) || '')) + ' vs previous' + (cls ? '<span class="sr"> (' + cls + ')</span>' : '') + '</div>';
     else d = '<div class="d">' + esc(tl.note || '') + '</div>';
+    if (tl.sub) d += '<div class="d">' + esc(tl.sub) + '</div>';
     var rows = [];
     if (tl.unavailable) rows.push(['Status', 'unavailable']);
     else {
@@ -144,6 +149,7 @@ var R = (function () {
    * selected period as a band. Margins come from measured tick and end-label widths.
    */
   function lineChart(env, o, w) {
+    var vf = function (v, u) { return o.dp !== undefined ? fmtD(v, o.dp, u) : fmt(v, u); };
     var series = o.series.filter(function (s) { return s.points.length; });
     if (!series.length) return '';
     var n = series[0].points.length, unit = o.unit || '';
@@ -153,7 +159,7 @@ var R = (function () {
     var dm = o.zero ? domain(0, hi, 4, true) : domain(lo - (hi - lo) * 0.15, hi + (hi - lo) * 0.15, 4, false);
     if (unit === '%') { dm.lo = Math.max(0, dm.lo); dm.hi = Math.min(100, dm.hi); dm.ticks = dm.ticks.filter(function (v) { return v >= dm.lo && v <= dm.hi; }); }
     var tw = Math.max.apply(null, dm.ticks.map(function (v) { return mw(env, fmt(v, unit), 11); }));
-    var endW = Math.max.apply(null, series.map(function (s) { var lp = lastPoint(s.points); return mw(env, (s.name ? s.name + ' ' : '') + fmt(lp ? lp.value : null, unit), 12, 600); }));
+    var endW = Math.max.apply(null, series.map(function (s) { var lp = lastPoint(s.points); return mw(env, (s.name ? s.name + ' ' : '') + vf(lp ? lp.value : null, unit), 12, 600); }));
     var narrow = w < 480;
     var M = { l: Math.ceil(tw) + 10, r: narrow ? 8 : Math.ceil(endW) + 14, t: narrow ? 30 : 12, b: 26 };
     var h = o.height || Math.round(Math.max(170, Math.min(250, (w - M.l - M.r) * 0.42)));
@@ -196,14 +202,14 @@ var R = (function () {
       var li = lastIndex(s.points);
       if (li >= 0) {
         var lp = s.points[li], lx = x(li) + 8, ly = y(lp.value) + 4;
-        if (narrow) body += t(M.l + si * (pw / 2), 14, (s.name ? s.name : 'Latest') + ' ' + fmt(lp.value, unit), 'val', 'start');
-        else body += t(lx, ly + (series.length > 1 ? endOffset(series, si, li, y) : 0), (s.name ? s.name + ' ' : '') + fmt(lp.value, unit), 'val');
+        if (narrow) body += t(M.l + si * (pw / 2), 14, (s.name ? s.name : 'Latest') + ' ' + vf(lp.value, unit), 'val', 'start');
+        else body += t(lx, ly + (series.length > 1 ? endOffset(series, si, li, y) : 0), (s.name ? s.name + ' ' : '') + vf(lp.value, unit), 'val');
       }
     });
     // hit columns
     for (var i = 0; i < n; i++) {
       var rows = [], first2 = series[0].points[i];
-      series.forEach(function (s) { var p = s.points[i]; rows.push([s.name || o.name, p.value === null ? 'n/a' : fmt(p.value, unit)]); if (p.change !== null && p.change !== undefined && series.length === 1) rows.push(['vs previous ' + o.grain, signed(p.change, pp(unit)), judge(p.change, o.good)]); });
+      series.forEach(function (s) { var p = s.points[i]; rows.push([s.name || o.name, p.value === null ? 'n/a' : vf(p.value, unit)]); if (p.change !== null && p.change !== undefined && series.length === 1) rows.push(['vs previous ' + o.grain, signed(p.change, pp(unit)), judge(p.change, o.good)]); });
       if (series.length === 1 && first2.n !== undefined && unit) rows.push(['Observations', fmt(first2.n)]);
       var lbl = (o.grain === 'month' ? monthLabel(first2.bucket + '-01') : 'Week of ' + dayLabel(first2.bucket));
       var tip = { t: lbl, s: o.title, r: rows, n: first2.partial ? 'Partial ' + o.grain + ': covers fewer days, so a count reads lower for that reason alone.' : '' };
@@ -270,7 +276,7 @@ var R = (function () {
     rows.forEach(function (r, i) {
       var y0 = top + i * rowH, bh = 14, by = narrow ? y0 + 26 : y0 + (rowH - bh) / 2;
       var vital = ins.vital !== null && r.rank <= ins.vital;
-      var tip = { t: r.label, s: r.template + ' · rank ' + r.rank + ' of ' + fmt(ins.groups) + ' failing questions', r: [['Failed answers', fmt(r.failed)], ['Share of all failed', fmt(r.share, '%')], ['Cumulative share', fmt(r.cumulative, '%')], ['Failure rate', fmt(r.rate, '%') + ' of ' + fmt(r.answered)]].concat(r.change === null ? [] : [['vs previous period', signed(r.change) + ' (' + fmt(r.previous) + ' before)', judge(r.change, 'down')]]), n: r.href ? 'Click to open the latest example in Mitti.' : '' };
+      var tip = { t: r.label, s: r.template + ' · rank ' + r.rank + ' of ' + fmt(ins.groups) + ' failing questions', r: [['Failed answers', fmt(r.failed)], ['Share of all failed', fmt(r.share, '%')], ['Cumulative share', fmt(r.cumulative, '%')], ['Failure rate', rate(r.rate) + ' of ' + fmt(r.answered)]].concat(r.change === null ? [] : [['vs previous period', signed(r.change) + ' (' + fmt(r.previous) + ' before)', judge(r.change, 'down')]]), n: r.href ? 'Click to open the latest example in Mitti.' : '' };
       body += '<g data-i="' + i + '"' + tipAttr(tip) + (r.href ? ' data-href="' + esc(r.href) + '"' : '') + '><rect class="hit" x="0" y="' + y0 + '" width="' + w + '" height="' + rowH + '"/>';
       if (narrow) body += t(1, y0 + 13, clip(env, r.rank + '. ' + r.label, 12.5, w - 8), 'lbl') + '<title>' + esc(r.label) + '</title>';
       else body += t(1, y0 + 15, clip(env, r.label, 12.5, labelW - 14), 'lbl') + t(1, y0 + 29, clip(env, r.template, 11.5, labelW - 14), 'lbl2');
@@ -373,10 +379,7 @@ var R = (function () {
       var cap = 'Selected: ' + ctx.period.long.toLowerCase(), cw = mw(env, cap, 11);
       body += t(Math.max(0, Math.min(w - cw, ((si + ei + 1) * sw) / 2 - cw / 2)), top - 12, cap, 'ann');
     }
-    var firstDue = -1; weeks.forEach(function (wk, i) { if (firstDue < 0 && wk.due > 0) firstDue = i; });
-    if (firstDue > 3) { var nl = 'No scheduled inspections due before ' + monthLabel(weeks[firstDue].week); body += '<rect class="nodue" x="0" y="' + top + '" width="' + r1(firstDue * sw - 2) + '" height="' + sh + '" rx="3" style="opacity:.5"/>'; if (mw(env, nl, 11) + 16 < firstDue * sw) body += t(firstDue * sw / 2, top + sh / 2 + 4, nl, 'ann', 'middle'); }
     weeks.forEach(function (wk, i) {
-      if (i < firstDue && firstDue > 3) return;
       var p = wk.compliance_pct, x = i * sw;
       var rows = p === null ? [['Due', fmt(wk.due)], ['Resolved', fmt(wk.resolved)]] : [['On time', fmt(p, '%')], ['On time / late / missed', fmt(wk.on_time) + ' / ' + fmt(wk.late) + ' / ' + fmt(wk.missed)], ['Due', fmt(wk.due)]];
       if (wk.change_pp !== null) rows.push(['vs previous week', signed(wk.change_pp, ' pts'), judge(wk.change_pp, 'up')]);
@@ -389,7 +392,7 @@ var R = (function () {
     });
     body += t(1, top + sh + gapM + vh + 16, 'Bars: occurrences due per week (tallest ' + fmt(maxDue) + ')', 'ann');
     var lastM = -1, lastX = -99;
-    weeks.forEach(function (wk, i) { var m = ymd(wk.week).m; if (m !== lastM) { lastM = m; var lx = i * sw; if (lx - lastX > mw(env, 'Mmm', 11) + 10 && i > 0) { body += t(lx, top + sh + 16, MON[m], 'tick'); lastX = lx; } } });
+    weeks.forEach(function (wk, i) { var m = ymd(wk.week).m; if (m !== lastM) { lastM = m; var lx = i * sw; if (lx - lastX > mw(env, 'Mmm', 11) + 10 && i > 0 && lx + mw(env, MON[m], 11) <= w) { body += t(lx, top + sh + 16, MON[m], 'tick'); lastX = lx; } } });
     return svg(w, h, body, 'Scheduled inspections done on time, per week');
   }
 
@@ -500,7 +503,7 @@ var R = (function () {
       return '<th scope="col"' + (c.num ? ' class="num"' : '') + aria + '><button type="button" data-sort="' + id + '" data-k="' + c.k + '">' + esc(c.label) + '<span class="ar" aria-hidden="true">' + (on ? (st.d === 'asc' ? '▲' : '▼') : '▽') + '</span></button></th>';
     }).join('');
     var dps = {}; cols.forEach(function (c) { if (c.fx) dps[c.k] = dpOf(rows.map(function (r) { return r[c.k]; })); });
-    var body = data.map(function (r) { return '<tr' + (opts.sel && opts.sel(r) ? ' class="sel"' : '') + '>' + cols.map(function (c) { var cls = (c.num ? 'num' : '') + (c.cls ? ' ' + c.cls(r) : ''); return '<td' + (cls.trim() ? ' class="' + cls.trim() + '"' : '') + '>' + (c.fx ? esc(fmtD(r[c.k], dps[c.k], c.unit)) : c.h(r)) + '</td>'; }).join('') + '</tr>'; }).join('');
+    var body = data.map(function (r) { return '<tr' + (opts.sel && opts.sel(r) ? ' class="row-sel"' : '') + '>' + cols.map(function (c) { var cls = (c.num ? 'num' : '') + (c.nw ? ' nw' : '') + (c.cls ? ' ' + c.cls(r) : ''); return '<td' + (cls.trim() ? ' class="' + cls.trim() + '"' : '') + '>' + (c.fx ? esc(fmtD(r[c.k], dps[c.k], c.unit)) : c.h(r)) + '</td>'; }).join('') + '</tr>'; }).join('');
     return '<div class="tw" role="region" tabindex="0" aria-label="' + esc(opts.label || 'Table') + '"><table><caption class="sr">' + esc(opts.label || '') + ' (select a column heading to sort)</caption><thead><tr>' + hd + '</tr></thead><tbody>' + body + '</tbody></table></div>' + (opts.after || '');
   }
   function link(text, h) { var u = href(h); return u ? '<a href="' + esc(u) + '" target="_blank" rel="noopener noreferrer">' + esc(text) + '</a>' : esc(text); }
@@ -528,22 +531,23 @@ var R = (function () {
     var trendBody = ins.unavailable ? unavailable(ins.unavailable) : chartSlot('tr-ins', 'Inspections completed per ' + ins.grain, 200) + legend([['hollow', 'Hollow point = partial ' + ins.grain]].concat(bandLegend(ctx)));
     charts['tr-ins'] = function (w) { return lineChart(ctx.env, { series: [{ points: ins.points, name: '' }], unit: '', grain: ins.grain, zero: true, title: 'Inspections completed', name: 'Inspections', band: ctx.period, windowTo: ctx.window.to.slice(0, 10), good: 'up' }, w); };
     var att = s.attention.length ? '<ul class="att">' + s.attention.map(function (a) { return '<li><span class="sev s' + a.severity + '">' + ['', 'Overdue', 'Missed', 'Rising', 'New issue'][a.severity] + '</span><p>' + esc(a.text) + (href(a.href) ? ' ' + link('Open', a.href) : '') + '</p></li>'; }).join('') + '</ul>' : '<p class="empty">Nothing meets the attention rules this period: no overdue high-priority actions, missed schedules, failed-rate jumps of 10+ points or new high-priority issues.</p>';
-    html += '<div class="grid">' + card(7, 'Inspections completed per ' + ins.grain, rangeOf(ctx.window.label) + (ins.direction ? '. Trend: ' + ins.direction + '.' : ''), trendBody) + card(5, 'Needs attention', 'Top three by severity, from the safety pulse.', att) + '</div>';
+    html += '<div class="grid">' + card(7, 'Inspections completed per ' + ins.grain, rangeOf(ctx.window.label) + trendText(ins), trendBody) + card(5, 'Needs attention', 'Top three by severity, from the safety pulse.', att) + '</div>';
     var scoreBody = sc.unavailable ? unavailable(sc.unavailable) : chartSlot('tr-score', 'Average score per ' + sc.grain, 200);
     charts['tr-score'] = function (w) { return lineChart(ctx.env, { series: [{ points: sc.points, name: '' }], unit: '%', grain: sc.grain, title: 'Average inspection score', name: 'Average score', band: ctx.period, windowTo: ctx.window.to.slice(0, 10), good: 'up' }, w); };
     var fr = series(ctx, 'failed_item_rate');
     var frBody = fr.unavailable ? unavailable(fr.unavailable) : chartSlot('tr-fr', 'Failed-item rate per ' + fr.grain, 200);
-    charts['tr-fr'] = function (w) { return lineChart(ctx.env, { series: [{ points: fr.points, name: '' }], unit: '%', grain: fr.grain, zero: true, title: 'Failed-item rate', name: 'Failed-item rate', band: ctx.period, windowTo: ctx.window.to.slice(0, 10), good: 'down' }, w); };
-    html += '<div class="grid">' + card(6, 'Average inspection score', 'Mean score of scored inspections, per ' + sc.grain + '. Axis starts near the data, not at zero.', scoreBody) + card(6, 'Failed-item rate', 'Failed answers as a share of answered items, per ' + fr.grain + '.', frBody) + '</div>';
+    charts['tr-fr'] = function (w) { return lineChart(ctx.env, { series: [{ points: fr.points, name: '' }], unit: '%', grain: fr.grain, zero: true, title: 'Failed-item rate', name: 'Failed-item rate', dp: 2, band: ctx.period, windowTo: ctx.window.to.slice(0, 10), good: 'down' }, w); };
+    html += '<div class="grid">' + card(6, 'Average inspection score', 'Mean score of scored inspections, per ' + sc.grain + '. Axis starts near the data, not at zero.', scoreBody) + card(6, 'Failed-item rate', 'Failed answers as a share of answered items, per ' + fr.grain + trendText(fr), frBody) + '</div>';
     html += notes(s.caveats);
     return { html: html, charts: charts };
   }
   function bandLegend(ctx) { return ctx.slice.window === 'w' && ctx.period.key === '90d' ? [] : ctx.slice.window === 'm' && ctx.period.key === '12m' ? [] : [['band', 'Selected period']]; }
   function sparkFor(ctx, key) {
-    if (key === 'missed') {
+    if (key === 'missed' || key.indexOf('stripe:') === 0) {
       var st = ctx.scope.stripes; if (st.state !== 'ok') return null;
-      var wk = ctx.slice.window === 'm' ? st.weeks : st.weeks.slice(-13);
-      return function (w) { return sparkline(wk.map(function (x) { return { value: x.due ? x.missed : null, partial: x.partial }; }), w); };
+      var f = key === 'missed' ? 'missed' : key.slice(7);
+      var wk = ctx.slice.window === 'm' ? st.weeks.filter(function (x, i) { return st.weeks.slice(0, i + 1).some(function (y) { return y.due; }); }) : st.weeks.slice(-13);
+      return function (w) { return sparkline(wk.map(function (x) { return { value: x.due ? x[f] : null, partial: x.partial }; }), w); };
     }
     var s = series(ctx, key); if (!s || s.unavailable) return null;
     return function (w) { return sparkline(s.points, w); };
@@ -559,11 +563,11 @@ var R = (function () {
     if (!s.unavailable && s.rows.length) charts.pareto = function (w) { return pareto(ctx.env, s, w); };
     html += '<div class="grid">' + card(12, 'Failed-item Pareto: where the failures concentrate', 'Top ' + s.rows.length + ' of ' + fmt(s.groups) + ' failing questions, ' + ctx.period.long.toLowerCase() + '. The right panel accumulates their share of all ' + fmt(s.failed) + ' failed answers.', body) + '</div>';
     var fr = series(ctx, 'failed_item_rate'), sc = series(ctx, 'average_score');
-    charts['i-fr'] = function (w) { return lineChart(ctx.env, { series: [{ points: fr.points }], unit: '%', grain: fr.grain, zero: true, title: 'Failed-item rate', name: 'Failed-item rate', band: ctx.period, windowTo: ctx.window.to.slice(0, 10), good: 'down' }, w); };
+    charts['i-fr'] = function (w) { return lineChart(ctx.env, { series: [{ points: fr.points }], unit: '%', grain: fr.grain, zero: true, title: 'Failed-item rate', name: 'Failed-item rate', dp: 2, band: ctx.period, windowTo: ctx.window.to.slice(0, 10), good: 'down' }, w); };
     charts['i-sc'] = function (w) { return lineChart(ctx.env, { series: [{ points: sc.points }], unit: '%', grain: sc.grain, title: 'Average score', name: 'Average score', band: ctx.period, windowTo: ctx.window.to.slice(0, 10), good: 'up' }, w); };
-    html += '<div class="grid">' + card(6, 'Failed-item rate per ' + fr.grain, rangeOf(ctx.window.label) + (fr.direction ? '. Trend: ' + fr.direction + '.' : ''), fr.unavailable ? unavailable(fr.unavailable) : chartSlot('i-fr', 'Failed-item rate trend', 200)) + card(6, 'Average score per ' + sc.grain, rangeOf(ctx.window.label) + (sc.direction ? '. Trend: ' + sc.direction + '.' : ''), sc.unavailable ? unavailable(sc.unavailable) : chartSlot('i-sc', 'Average score trend', 200)) + '</div>';
+    html += '<div class="grid">' + card(6, 'Failed-item rate per ' + fr.grain, rangeOf(ctx.window.label) + trendText(fr), fr.unavailable ? unavailable(fr.unavailable) : chartSlot('i-fr', 'Failed-item rate trend', 200)) + card(6, 'Average score per ' + sc.grain, rangeOf(ctx.window.label) + trendText(sc), sc.unavailable ? unavailable(sc.unavailable) : chartSlot('i-sc', 'Average score trend', 200)) + '</div>';
     if (!s.unavailable && s.rows.length) {
-      var cols = [n('rank', '#'), { k: 'label', label: 'Question', v: function (r) { return r.label.toLowerCase(); }, h: function (r) { return esc(r.label) + '<span class="s">' + esc(r.template) + '</span>'; } }, n('failed', 'Failed'), n('change', 'vs previous', '', { h: function (r) { return esc(signed(r.change)); }, cls: function (r) { return judge(r.change, 'down'); } }), n('answered', 'Answered'), n('rate', 'Failure rate', '%'), n('share', 'Share', '%'), n('cumulative', 'Cumulative', '%'), { k: 'href', label: 'Example', v: function (r) { return r.href ? 1 : 0; }, h: function (r) { return href(r.href) ? link('Open', r.href) : ''; } }];
+      var cols = [n('rank', '#'), { k: 'label', label: 'Question', v: function (r) { return r.label.toLowerCase(); }, h: function (r) { return esc(r.label) + '<span class="s">' + esc(r.template) + '</span>'; } }, n('failed', 'Failed'), n('change', 'vs previous', '', { h: function (r) { return esc(signed(r.change)); }, cls: function (r) { return judge(r.change, 'down'); } }), n('answered', 'Answered'), rateCol('rate', 'Failure rate'), n('share', 'Share', '%'), n('cumulative', 'Cumulative', '%'), { k: 'href', label: 'Example', v: function (r) { return r.href ? 1 : 0; }, h: function (r) { return href(r.href) ? link('Open', r.href) : ''; } }];
       html += '<div class="grid">' + card(12, 'Failed questions', 'Ranked by failed answers. Failure rate = failed / answered for the same question.', table('t-items', ctx, cols, s.rows, { label: 'Failed questions', sort: { k: 'rank', d: 'asc' } })) + '</div>';
     }
     html += notes(s.caveats);
@@ -578,8 +582,8 @@ var R = (function () {
     var tl = [
       { key: 'open', label: 'Open actions', unit: '', value: m.open, previous: null, delta: null, note: 'snapshot now; ' + fmt(m.open_no_due_date) + ' without a due date' },
       { key: 'overdue', label: 'Overdue now', unit: '', value: m.overdue, previous: null, delta: null, note: fmt(m.overdue_90_plus) + ' overdue by more than 90 days' },
-      o.action_tiles[0], o.action_tiles[1],
-      { key: 'median', label: 'Median days to close', unit: '', value: m.median_resolution_days, previous: null, delta: null, note: 'p90 ' + fmt(m.p90_resolution_days) + ' days; ' + fmt(m.completed_in_period) + ' completed' },
+      o.action_tiles[0], Object.assign({}, o.action_tiles[1], s.closed_other === null ? {} : { sub: 'of ' + fmt(m.closed_in_period) + ' closed (' + fmt(s.closed_other) + ' without completing, such as can\'t do)' }),
+      { key: 'median', label: 'Median days to close', unit: '', value: m.median_resolution_days, previous: null, delta: null, note: 'p90 ' + fmt(m.p90_resolution_days) + ' days; from ' + fmt(m.completed_in_period) + ' completed in the period' },
     ];
     html += '<div class="tiles n5">' + tl.map(function (x) { var id = x.spark ? 'sp3-' + x.key : ''; if (id) charts[id] = sparkFor(ctx, x.spark); return tile(x, ctx, id); }).join('') + '</div>';
     var dots = ctx.data.open_actions;
@@ -587,16 +591,16 @@ var R = (function () {
     var counts = {}; s.by_priority.forEach(function (p) { counts[p.priority === 'other' ? 'none' : p.priority] = p; });
     var dsBody = dots.unavailable ? unavailable(dots.unavailable) : !rows.length ? '<p class="empty">No open actions. This chart shows every open action as a dot, placed by how long it has been open.</p>' : chartSlot('dots', 'Open actions by age and priority', 260) + legend([['pr-high dot', 'High'], ['pr-medium dot', 'Medium'], ['pr-low dot', 'Low'], ['pr-none dot', 'No priority'], ['pr-low ring', 'Hollow = not yet due']]);
     if (rows.length) charts.dots = function (w) { return dotStrip(ctx.env, rows, counts, m, w); };
-    html += '<div class="grid">' + card(12, 'Every open action, by age', fmt(rows.length) + ' open actions as of now, placed by days since they were raised. Filled dots are overdue. Bands follow the backlog analytic: 0-7, 8-30, 31-90 and 90+ days. The age axis is square-root scaled so recent actions get room.', dsBody, dots.undated ? esc(fmt(dots.undated)) + ' open actions have no created date and are not placed.' : '') + '</div>';
+    html += '<div class="grid">' + card(12, 'Every open action, by age', fmt(rows.length) + ' open actions as of now, placed by days since they were raised. Filled dots are overdue. Bands follow the backlog analytic: 0-7, 8-30, 31-90 and 90+ days. The age axis is square-root scaled so recent actions get room.', dsBody, 'Open actions by age now: <b>0-7 d</b> ' + esc(fmt(m.age_0_7)) + ' · <b>8-30 d</b> ' + esc(fmt(m.age_8_30)) + ' · <b>31-90 d</b> ' + esc(fmt(m.age_31_90)) + ' · <b>90+ d</b> ' + esc(fmt(m.age_90_plus)) + '.' + (dots.undated ? ' ' + esc(fmt(dots.undated)) + ' open actions have no created date and are not placed.' : '')) + '</div>';
     var pFrom = ctx.period.from.slice(0, 10), pTo = ctx.period.to.slice(0, 10);
     var wk = s.weekly.map(function (x) { return { bucket: x.week_start, from: x.week_start < pFrom ? pFrom : x.week_start, partial: x.week_start < pFrom || addDays(x.week_start, 7) > pTo, opened: x.opened, closed: x.closed }; });
     var useWeeks = wk.length >= 3 && wk.length <= 60;
     charts.flow = function (w) { return lineChart(ctx.env, { series: [{ points: wk.map(function (x) { return { bucket: x.bucket, from: x.from, value: x.opened, partial: x.partial }; }), name: 'Opened', cls: '' }, { points: wk.map(function (x) { return { bucket: x.bucket, from: x.from, value: x.closed, partial: x.partial }; }), name: 'Closed', cls: 'cum' }], unit: '', grain: 'week', zero: true, title: 'Actions opened and closed per week', name: '', windowTo: ctx.period.to.slice(0, 10) }, w); };
-    var flowBody = useWeeks ? chartSlot('flow', 'Actions opened and closed per week', 200) + legend([['mark', 'Opened (created)'], ['cum', 'Closed (has a completion date)'], ['hollow', 'Hollow point = partial week']]) : '<p class="empty">' + esc(fmt(m.opened_in_period) + ' opened and ' + fmt(m.closed_in_period) + ' closed in this period (too few weeks to chart).') + '</p>';
+    var flowBody = useWeeks ? chartSlot('flow', 'Actions opened and closed per week', 200) + legend([['mark', 'Opened (created)'], ['cum', "Closed (completed or can't do)"], ['hollow', 'Hollow point = partial week']]) : '<p class="empty">' + esc(fmt(m.opened_in_period) + ' opened and ' + fmt(m.closed_in_period) + " closed (completed or can't do) in this period (too few weeks to chart).") + '</p>';
     var bySite = s.by_site.filter(function (g) { return g.overdue > 0 || g.open > 0; }).slice(0, 12);
     var siteBars = bySite.map(function (g) { return { label: g.group, value: g.overdue, valueText: fmt(g.overdue) + ' of ' + fmt(g.open), cls: ctx.site && g.sk === ctx.site.sk ? 'hot' : g.overdue ? 'risk' : '', tip: { t: g.group, s: 'Open actions now', r: [['Overdue', fmt(g.overdue)], ['Open', fmt(g.open)], ['No due date', fmt(g.no_due_date)], ['Oldest open', fmt(g.oldest_age_days) + ' days']], n: '' } }; });
     charts.bysite = function (w) { return hbars(ctx.env, { rows: siteBars, title: 'Overdue actions by site' }, w); };
-    html += '<div class="grid">' + card(7, 'Opened against closed, per week', rangeOf(ctx.period.label) + '. When opened runs above closed, the backlog grows.', flowBody) + card(5, ctx.site ? 'Overdue actions at this site' : 'Overdue actions by site', 'Overdue of open, now. Sorted by overdue count.', bySite.length ? chartSlot('bysite', 'Overdue actions by site', 120) : '<p class="empty">No open actions in scope.</p>') + '</div>';
+    html += '<div class="grid">' + card(7, 'Opened against closed, per week', rangeOf(ctx.period.label) + ". Closed = completed or can't do. When opened runs above closed, the backlog grows.", flowBody) + card(5, ctx.site ? 'Overdue actions at this site' : 'Overdue actions by site', 'Overdue of open, now. Sorted by overdue count.', bySite.length ? chartSlot('bysite', 'Overdue actions by site', 120) : '<p class="empty">No open actions in scope.</p>') + '</div>';
     if (rows.length) {
       var cols = [{ k: 'title', label: 'Action', v: function (r) { return r.title.toLowerCase(); }, h: function (r) { return link(r.title, r.href) + '<span class="s">' + esc(r.site) + '</span>'; } }, { k: 'priority', label: 'Priority', v: function (r) { return PRIORITIES.indexOf(r.priority); }, h: function (r) { return '<span class="pill ' + esc(r.priority) + '">' + esc(PR_LABEL[r.priority] || r.priority) + '</span>'; } }, n('age_days', 'Open (days)'), { k: 'due', label: 'Due', v: function (r) { return r.due; }, h: function (r) { return esc(r.due ? dayLabel(r.due) : 'none'); } }, n('overdue_days', 'Days overdue', '', { h: function (r) { return r.overdue_days === null ? '' : esc(fmt(r.overdue_days)); }, cls: function (r) { return r.overdue_days !== null ? 'worse' : ''; } })];
       html += '<div class="grid">' + card(12, 'Open actions', 'Oldest first. Select a heading to sort.', table('t-actions', ctx, cols, rows, { label: 'Open actions', sort: { k: 'age_days', d: 'desc' } })) + '</div>';
@@ -610,16 +614,19 @@ var R = (function () {
     html += head(ctx, 'Schedules · ' + scopeName(ctx), 'Schedules', 'Are scheduled inspections being done on time?', markFirst(s.answer, s.state !== 'ok'));
     if (s.state !== 'ok') { html += '<div class="grid">' + card(12, 'Schedule compliance', '', s.state === 'empty' ? '<p class="empty">' + esc(s.reason) + '</p>' : unavailable(s.reason)) + '</div>' + notes(s.caveats); return { html: html, charts: charts }; }
     var m = s.metrics, c = s.changes;
+    var lead = 0; if (st.state === 'ok') { while (lead < st.weeks.length && !st.weeks[lead].due) lead++; if (lead === st.weeks.length) lead = 0; }
+    var stv = st.state === 'ok' && lead > 0 ? Object.assign({}, st, { weeks: st.weeks.slice(lead) }) : st;
     var tl = [
-      { key: 'on', label: 'Done on time', unit: '%', value: m.compliance_pct, previous: s.previous ? s.previous.compliance_pct : null, delta: c.compliance_pct, good: 'up', note: m.compliance_pct === null ? 'nothing resolved yet' : fmt(m.on_time) + ' of ' + fmt(m.resolved) + ' resolved' },
-      { key: 'late', label: 'Done late', unit: '%', value: m.late_pct, previous: s.previous ? s.previous.late_pct : null, delta: c.late_pct, good: 'down', note: fmt(m.late) + ' occurrences' },
+      { key: 'on', label: 'Done on time', unit: '%', value: m.compliance_pct, previous: s.previous ? s.previous.compliance_pct : null, delta: c.compliance_pct, good: 'up', spark: 'stripe:compliance_pct', note: m.compliance_pct === null ? 'nothing resolved yet' : fmt(m.on_time) + ' of ' + fmt(m.resolved) + ' resolved' },
+      { key: 'late', label: 'Done late', unit: '%', value: m.late_pct, previous: s.previous ? s.previous.late_pct : null, delta: c.late_pct, good: 'down', spark: 'stripe:late', note: fmt(m.late) + ' occurrences' },
       { key: 'missed', label: 'Missed', unit: '%', value: m.missed_pct, previous: s.previous ? s.previous.missed_pct : null, delta: c.missed_pct, good: 'down', spark: 'missed', note: fmt(m.missed) + ' occurrences' },
-      { key: 'due', label: 'Occurrences due', unit: '', value: m.due, previous: s.previous ? s.previous.due : null, delta: c.due, note: fmt(m.pending) + ' still open, ' + fmt(m.wont_do) + " won't do" },
+      { key: 'due', label: 'Occurrences due', unit: '', value: m.due, previous: s.previous ? s.previous.due : null, delta: c.due, spark: 'stripe:due', note: fmt(m.pending) + ' still open, ' + fmt(m.wont_do) + " won't do" },
     ];
     html += '<div class="tiles n4">' + tl.map(function (x) { var id = x.spark ? 'sp4-' + x.key : ''; if (id) charts[id] = sparkFor(ctx, x.spark); return tile(x, ctx, id); }).join('') + '</div>';
-    charts.stripes = function (w) { return stripesChart(ctx.env, st, ctx, w); };
-    html += '<div class="grid">' + card(12, 'On-time share, week by week', 'Last 12 months, one stripe per week. Darker red = a lower share done on time; dashed outline = nothing resolved that week. Bars below show how many were due.',
-      st.state === 'ok' ? chartSlot('stripes', 'Weekly schedule compliance stripes', 190) + legend([['q0', '95% or more on time'], ['q1', '85 to 95%'], ['q2', '70 to 85%'], ['q3', '50 to 70%'], ['q4', 'Under 50%']]) : unavailable(st.reason)) + '</div>';
+    charts.stripes = function (w) { return stripesChart(ctx.env, stv, ctx, w); };
+    html += '<div class="grid">' + card(12, 'On-time share, week by week', (lead ? 'From ' + dayLabel(stv.weeks[0].week) : 'Last 12 months') + ', one stripe per week. Darker red = a lower share done on time; dashed outline = nothing resolved that week. Bars below show how many were due.',
+      st.state === 'ok' ? chartSlot('stripes', 'Weekly schedule compliance stripes', 190) + legend([['q0', '95% or more on time'], ['q1', '85 to 95%'], ['q2', '70 to 85%'], ['q3', '50 to 70%'], ['q4', 'Under 50%']]) : unavailable(st.reason),
+      lead ? 'No scheduled inspections were due before ' + esc(monthLabel(stv.weeks[0].week)) + ', so the ' + esc(fmt(lead)) + ' earlier weeks of the 12-month window are left out.' : '') + '</div>';
     charts.outcome = function (w) { return outcomeBar(ctx.env, m, w); };
     var sites = s.by_site.filter(function (r) { return r.resolved > 0; }).slice(0, 12);
     var cDp = dpOf(sites.map(function (r) { return r.compliance_pct; }));
@@ -635,7 +642,7 @@ var R = (function () {
 
   function sites(ctx) {
     var L = ctx.data.league[ctx.period.key], charts = {}, html = '', selSk = ctx.site ? ctx.site.sk : null;
-    html += head(ctx, 'Sites · ' + ctx.data.scope_note, 'Sites', 'Which sites are improving, and which are slipping?', markFirst(L.answer, Boolean(L.unavailable)));
+    html += head(ctx, 'Sites · ' + (ctx.site ? ctx.site.name + ' highlighted' : ctx.data.scope_note), 'Sites', 'Which sites are improving, and which are slipping?', markFirst(L.answer, Boolean(L.unavailable)));
     if (L.unavailable) { html += '<div class="grid">' + card(12, 'Site league', '', unavailable(L.unavailable)) + '</div>' + notes(L.caveats); return { html: html, charts: charts }; }
     var rows = L.rows.filter(function (r) { return r.score_change !== null; }).sort(function (a, b) { return b.score_change - a.score_change || a.rank - b.rank; });
     charts.db = function (w) { return dumbbell(ctx.env, rows, selSk, w); };
@@ -644,12 +651,12 @@ var R = (function () {
       ctx.site && !rows.some(function (r) { return r.sk === selSk; }) ? esc(ctx.site.name) + ' is not in the comparison (fewer than ' + ctx.data.league_min_inspections + ' inspections in one of the periods).' : '') + '</div>';
     var fr = L.rows.filter(function (r) { return r.failed_item_rate !== null; }).slice().sort(function (a, b) { return b.failed_item_rate - a.failed_item_rate; });
     var frDp = dpOf(fr.map(function (r) { return r.failed_item_rate; }));
-    var bars = fr.map(function (r, i) { return { label: r.site, value: r.failed_item_rate, valueText: fmtD(r.failed_item_rate, frDp, '%'), cls: selSk ? (r.sk === selSk ? 'hot' : '') : i < 3 ? 'hot' : '', faded: false, sel: selSk && r.sk === selSk, tip: { t: r.site, s: 'Rank ' + r.rank + ' by composite', r: [['Failed-item rate', fmt(r.failed_item_rate, '%')], ['Inspections', fmt(r.inspections)], ['Overdue actions', fmt(r.overdue_actions)]], n: '' } }; });
+    var bars = fr.map(function (r, i) { return { label: r.site, value: r.failed_item_rate, valueText: rate(r.failed_item_rate), cls: selSk ? (r.sk === selSk ? 'hot' : '') : i < 3 ? 'hot' : '', faded: false, sel: selSk && r.sk === selSk, tip: { t: r.site, s: 'Rank ' + r.rank + ' by composite', r: [['Failed-item rate', rate(r.failed_item_rate)], ['Inspections', fmt(r.inspections)], ['Overdue actions', fmt(r.overdue_actions)]], n: '' } }; });
     charts.frsites = function (w) { return hbars(ctx.env, { rows: bars, unit: '%', title: 'Failed-item rate by site' }, w); };
     var od = L.rows.filter(function (r) { return r.overdue_actions !== null; }).slice().sort(function (a, b) { return b.overdue_actions - a.overdue_actions || a.rank - b.rank; });
     var obars = od.map(function (r) { return { label: r.site, value: r.overdue_actions, valueText: fmt(r.overdue_actions), cls: selSk ? (r.sk === selSk ? 'hot' : '') : r.overdue_actions ? 'risk' : '', sel: selSk && r.sk === selSk, tip: { t: r.site, s: 'Open overdue actions at the end of the period', r: [['Overdue actions', fmt(r.overdue_actions)], ['Median days to close', fmt(r.median_resolution_days)]], n: '' } }; });
     charts.odsites = function (w) { return hbars(ctx.env, { rows: obars, title: 'Overdue actions by site' }, w); };
-    html += '<div class="grid">' + card(6, 'Failed-item rate by site', 'Highest first; the three highest are dark.', bars.length ? chartSlot('frsites', 'Failed-item rate by site', 160) : unavailable('No failed-item rates for this period.')) + card(6, 'Open overdue actions by site', 'Counted at the end of the period. Scales with site size.', obars.length ? chartSlot('odsites', 'Overdue actions by site', 160) : unavailable('No action figures for this period.')) + '</div><div class="grid">' + card(12, 'Site league', 'Ranked by a composite of inspections, average score, failed-item rate, overdue actions and days to close. A relative ranking among these sites, not a safety rating.', table('t-league', ctx, [n('rank', '#'), { k: 'site', label: 'Site', v: function (r) { return r.site.toLowerCase(); }, h: function (r) { return esc(r.site); } }, n('inspections', 'Inspections'), n('average_score', 'Avg score', '%'), n('score_change', 'Change', '', { h: function (r) { return esc(signedD(r.score_change, 1, ' pts')); }, cls: function (r) { return judge(r.score_change, 'up'); } }), n('failed_item_rate', 'Failed rate', '%'), n('overdue_actions', 'Overdue'), n('median_resolution_days', 'Days to close'), n('rank_change', 'Rank move', '', { h: function (r) { return esc(r.rank_change === null ? 'new' : signed(r.rank_change)); }, cls: function (r) { return judge(r.rank_change, 'up'); } })], L.rows, { label: 'Site league', sort: { k: 'rank', d: 'asc' }, sel: function (r) { return selSk && r.sk === selSk; }, after: L.below_minimum.length ? '<p class="foot">Below the ' + ctx.data.league_min_inspections + '-inspection minimum: ' + L.below_minimum.map(function (b) { return esc(b.site) + ' (' + esc(fmt(b.inspections)) + ')'; }).join(', ') + '.</p>' : '' })) + '</div>';
+    html += '<div class="grid">' + card(6, 'Failed-item rate by site', 'Highest first; the three highest are dark.', bars.length ? chartSlot('frsites', 'Failed-item rate by site', 160) : unavailable('No failed-item rates for this period.')) + card(6, 'Open overdue actions by site', 'Counted at the end of the period. Scales with site size.', obars.length ? chartSlot('odsites', 'Overdue actions by site', 160) : unavailable('No action figures for this period.')) + '</div><div class="grid">' + card(12, 'Site league', 'Ranked by a composite of inspections, average score, failed-item rate, overdue actions and days to close. A relative ranking among these sites, not a safety rating.', table('t-league', ctx, [n('rank', '#'), { k: 'site', label: 'Site', nw: true, v: function (r) { return r.site.toLowerCase(); }, h: function (r) { return esc(r.site); } }, n('inspections', 'Inspections'), n('average_score', 'Avg score', '%'), n('score_change', 'Change', '', { h: function (r) { return esc(signedD(r.score_change, 1, ' pts')); }, cls: function (r) { return judge(r.score_change, 'up'); } }), rateCol('failed_item_rate', 'Failed rate'), n('overdue_actions', 'Overdue'), n('median_resolution_days', 'Days to close'), n('rank_change', 'Rank move', '', { h: function (r) { return esc(r.rank_change === null ? 'new' : signed(r.rank_change)); }, cls: function (r) { return judge(r.rank_change, 'up'); } })], L.rows, { label: 'Site league', sort: { k: 'rank', d: 'asc' }, sel: function (r) { return selSk && r.sk === selSk; }, after: L.below_minimum.length ? '<p class="foot">Below the ' + ctx.data.league_min_inspections + '-inspection minimum: ' + L.below_minimum.map(function (b) { return esc(b.site) + ' (' + esc(fmt(b.inspections)) + ')'; }).join(', ') + '.</p>' : '' })) + '</div>';
     html += notes(L.caveats, selSk ? ['The site filter highlights a site here; the league always compares every site in scope.'] : []);
     return { html: html, charts: charts };
   }
@@ -658,18 +665,19 @@ var R = (function () {
     var s = ctx.slice.team, charts = {}, html = '';
     html += head(ctx, 'People and templates · ' + scopeName(ctx), 'People and templates', 'Who is doing the inspections, and which templates find problems?', markFirst(s.answer, Boolean(s.inspectors_unavailable)));
     var top = s.inspector_rows.slice(0, 12);
-    var bars = top.map(function (r, i) { return { label: r.inspector_name, value: r.inspections, valueText: fmt(r.inspections), cls: i < 3 ? 'hot' : '', tip: { t: r.inspector_name, s: 'Rank ' + (i + 1) + ' of ' + fmt(s.inspectors) + ' inspectors by volume', r: [['Inspections', fmt(r.inspections)], ['Share of all', fmt(r.share_pct, '%')], ['Templates used', fmt(r.templates)], ['Median minutes', fmt(r.median_minutes)]], n: 'Descriptive only: volume depends on role and roster.' } }; });
+    var flagged = s.outlier_index === null || s.outlier_index === undefined ? null : s.inspector_rows[s.outlier_index];
+    var bars = top.map(function (r, i) { return { label: r.inspector_name, value: r.inspections, valueText: fmt(r.inspections) + (r === flagged ? ' (very fast)' : ''), cls: r === flagged ? 'risk' : '', tip: { t: r.inspector_name, s: 'Rank ' + (i + 1) + ' of ' + fmt(s.inspectors) + ' inspectors by volume', r: [['Inspections', fmt(r.inspections)], ['Share of all', fmt(r.share_pct, '%')], ['Templates used', fmt(r.templates)], ['Median minutes', fmt(r.median_minutes)]], n: r === flagged ? fmt(r.very_fast_share, '%') + ' of ' + fmt(r.very_fast_eligible) + ' timed inspections were very fast (under a quarter of the template median). A prompt for a conversation, not a performance score.' : 'Descriptive only: volume depends on role and roster.' } }; });
     var otherNote = s.other_inspectors > 0 && s.other_inspections !== null ? 'The other ' + esc(fmt(s.other_inspectors)) + ' inspectors completed <b>' + esc(fmt(s.other_inspections)) + '</b> inspections between them.' : '';
     charts.people = function (w) { return hbars(ctx.env, { rows: bars, title: 'Inspections by inspector' }, w); };
     var tpl = s.templates.filter(function (x) { return x.answered > 0; }).slice().sort(function (a, b) { return (b.rate || 0) - (a.rate || 0); }).slice(0, 12);
     var tDp = dpOf(tpl.map(function (x) { return x.rate; }));
-    var tbars = tpl.map(function (x, i) { var small = x.answered < 20; return { label: x.group, value: x.rate, valueText: fmtD(x.rate, tDp, '%') + (small ? ' (n=' + x.answered + ')' : ''), cls: small ? '' : i < 3 ? 'risk' : '', tip: { t: x.group, s: 'Failed-item rate, ' + ctx.period.long.toLowerCase(), r: [['Failed-item rate', fmt(x.rate, '%')], ['Failed / answered', fmt(x.failed) + ' / ' + fmt(x.answered)], ['Share of all failed', fmt(x.share, '%')]], n: small ? 'Small sample: fewer than 20 answered items.' : '' } }; });
+    var tbars = tpl.map(function (x, i) { var small = x.answered < 20; return { label: x.group, value: x.rate, valueText: rate(x.rate) + (small ? ' (n=' + x.answered + ')' : ''), cls: small ? '' : i < 3 ? 'hot' : '', tip: { t: x.group, s: 'Failed-item rate, ' + ctx.period.long.toLowerCase(), r: [['Failed-item rate', rate(x.rate)], ['Failed / answered', fmt(x.failed) + ' / ' + fmt(x.answered)], ['Share of all failed', fmt(x.share, '%')]], n: small ? 'Small sample: fewer than 20 answered items.' : '' } }; });
     charts.tpl = function (w) { return hbars(ctx.env, { rows: tbars, unit: '%', title: 'Failed-item rate by template' }, w); };
-    html += '<div class="grid">' + card(6, 'Inspections by inspector', 'Top 12 by volume, ' + ctx.period.long.toLowerCase() + '. Descriptive, not a performance score.', s.inspectors_unavailable ? unavailable(s.inspectors_unavailable) : bars.length ? chartSlot('people', 'Inspections by inspector', 200) : '<p class="empty">No completed inspections in this period.</p>', s.inspectors_unavailable ? '' : otherNote) +
-      card(6, 'Failed-item rate by template', 'Templates whose questions failed at least once, highest rate first. Grey with n = small sample.', s.templates_unavailable ? unavailable(s.templates_unavailable) : tbars.length ? chartSlot('tpl', 'Failed-item rate by template', 200) : '<p class="empty">No failed answers in this period.</p>') + '</div>';
+    html += '<div class="grid">' + card(6, 'Inspections by inspector', 'Top 12 by volume, ' + ctx.period.long.toLowerCase() + '. Descriptive, not a performance score' + (flagged ? '; red marks the inspector the headline describes.' : '.'), s.inspectors_unavailable ? unavailable(s.inspectors_unavailable) : bars.length ? chartSlot('people', 'Inspections by inspector', 200) : '<p class="empty">No completed inspections in this period.</p>', s.inspectors_unavailable ? '' : otherNote) +
+      card(6, 'Failed-item rate by template', 'Templates whose questions failed at least once, highest rate first; the three highest are dark. Grey with n = small sample.', s.templates_unavailable ? unavailable(s.templates_unavailable) : tbars.length ? chartSlot('tpl', 'Failed-item rate by template', 200) : '<p class="empty">No failed answers in this period.</p>') + '</div>';
     if (!s.inspectors_unavailable && s.inspector_rows.length) {
-      var cols = [{ k: 'inspector_name', label: 'Inspector', v: function (r) { return String(r.inspector_name).toLowerCase(); }, h: function (r) { return esc(r.inspector_name); } }, n('inspections', 'Inspections'), n('share_pct', 'Share', '%'), n('templates', 'Templates'), n('median_minutes', 'Median minutes'), n('failed_item_rate', 'Failed rate', '%'), n('expected_rate', 'Same-template rate', '%'), n('difference_pp', 'Difference', '', { h: function (r) { return esc(signedD(r.difference_pp, 1, ' pts')); } }), n('very_fast_share', 'Very fast', '%')];
-      html += '<div class="grid">' + card(12, 'Inspector activity', 'Same-template rate = the organisation’s failed-item rate on the templates this person used, so people are compared on the same mix. A lower rate can mean safer areas as easily as lighter inspections.', table('t-people', ctx, cols, s.inspector_rows, { label: 'Inspector activity', sort: { k: 'inspections', d: 'desc' }, after: s.truncated ? '<p class="foot">Showing ' + s.inspector_rows.length + ' of ' + s.total + ' inspectors (busiest first); figures above cover all of them.</p>' : '' })) + '</div>';
+      var cols = [{ k: 'inspector_name', label: 'Inspector', nw: true, v: function (r) { return String(r.inspector_name).toLowerCase(); }, h: function (r) { return esc(r.inspector_name); } }, n('inspections', 'Inspections'), n('share_pct', 'Share', '%'), n('templates', 'Templates'), n('median_minutes', 'Median minutes'), rateCol('failed_item_rate', 'Failed rate'), rateCol('expected_rate', 'Same-template rate'), n('difference_pp', 'Difference', '', { h: function (r) { return esc(signedD(r.difference_pp, 1, ' pts')); } }), n('very_fast_share', 'Very fast', '%', { h: function (r) { return esc(fmt(r.very_fast_share, '%')) + (r === flagged && r.very_fast_eligible ? '<span class="s">of ' + esc(fmt(r.very_fast_eligible)) + ' timed</span>' : ''); }, cls: function (r) { return r === flagged ? 'worse' : ''; } })];
+      html += '<div class="grid">' + card(12, 'Inspector activity', 'Same-template rate = the organisation’s failed-item rate on the templates this person used, so people are compared on the same mix. A lower rate can mean safer areas as easily as lighter inspections.', table('t-people', ctx, cols, s.inspector_rows, { label: 'Inspector activity', sort: { k: 'inspections', d: 'desc' }, sel: function (r) { return r === flagged; }, after: s.truncated ? '<p class="foot">Showing ' + s.inspector_rows.length + ' of ' + s.total + ' inspectors (busiest first); figures above cover all of them.</p>' : '' })) + '</div>';
     }
     html += notes(s.caveats);
     return { html: html, charts: charts };
