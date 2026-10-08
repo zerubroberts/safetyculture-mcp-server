@@ -24,7 +24,6 @@ export interface Series {
   partial: boolean[];
   /** The analytic's direction: rising, falling, flat or "not stated (...)". */
   direction: string;
-  mean: number | null;
   total: number | null;
 }
 
@@ -40,7 +39,6 @@ export function trendSeries(cache: CacheReader, metric: TrendMetric, grain: Grai
       values: t.table.map((r) => r.value),
       partial: t.table.map((r) => r.partial),
       direction: String(t.metrics.direction),
-      mean: (t.metrics.mean_value as number | null) ?? null,
       total: (t.metrics.total as number | null) ?? null,
     },
     problem: null,

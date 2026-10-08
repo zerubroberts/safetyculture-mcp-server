@@ -22,6 +22,9 @@ async function finish(built: Built, exportDir: string, slug: string, now: Date, 
   };
 }
 
+/** Optional caller-supplied target in percent. The reports never invent one: absent means nothing is drawn. */
+const TARGET_PCT = (description: string) => z.number().min(0).max(100).optional().describe(description);
+
 const REPORT_FEEDS: FeedName[] = ["inspections", "inspection_items", "actions", "issues", "schedule_occurrences", "schedules", "schedule_assignees", "sites", "templates", "users"];
 
 export const reportsTools: AnyToolSpec[] = [
@@ -93,15 +96,17 @@ export const reportsTools: AnyToolSpec[] = [
     access: "read",
     localWrite: true,
     description:
-      "Writes a monthly board pack (HTML and Markdown) for the last full month by default: executive summary, KPI tiles with 12-month sparklines, attention list, volume and score trends, site league with previous-period comparison, per-site trends, action backlog and scheduled-inspection compliance.",
+      "Writes a monthly board pack (HTML and Markdown) for the last full month by default: a three-line brief (what changed, what to watch, what we need), executive summary, KPI tiles with 12-month sparklines, attention list, volume and score trends, site league with previous-period comparison, per-site trends, action backlog and scheduled-inspection compliance. Optional targets are drawn only when given.",
     input: {
       period: P.period("last month"),
       site_ids: P.siteIds,
+      on_time_target_pct: TARGET_PCT("On-time target for scheduled inspections, in percent. Drawn on the compliance exhibit only when given."),
+      failed_rate_tolerance_pct: TARGET_PCT("Tolerated failed-item rate, in percent. Drawn on the site failed-item exhibit only when given."),
     },
     run: async (a, ctx) => {
       const now = ctx.now();
       const cache = await ctx.cache.ensure(REPORT_FEEDS);
-      const built = buildMonthlyBoardPack(cache, { period: a.period, site_ids: a.site_ids }, now);
+      const built = buildMonthlyBoardPack(cache, { period: a.period, site_ids: a.site_ids, on_time_target_pct: a.on_time_target_pct, failed_rate_tolerance_pct: a.failed_rate_tolerance_pct }, now);
       return finish(built, ctx.config.exportDir, "monthly-board-pack", now, ctx.config.pii, keyFor(ctx.config));
     },
   }),
@@ -137,11 +142,12 @@ export const reportsTools: AnyToolSpec[] = [
     input: {
       period: P.period("last 12 weeks"),
       site_ids: P.siteIds,
+      on_time_target_pct: TARGET_PCT("On-time target, in percent. Drawn on the weekly chart and the comparison bars only when given."),
     },
     run: async (a, ctx) => {
       const now = ctx.now();
       const cache = await ctx.cache.ensure(["schedule_occurrences", "schedules", "schedule_assignees", "inspections", "sites", "templates", "users"]);
-      const built = buildScheduleCompliance(cache, { period: a.period, site_ids: a.site_ids }, now);
+      const built = buildScheduleCompliance(cache, { period: a.period, site_ids: a.site_ids, on_time_target_pct: a.on_time_target_pct }, now);
       return finish(built, ctx.config.exportDir, "schedule-compliance", now, ctx.config.pii, keyFor(ctx.config));
     },
   }),

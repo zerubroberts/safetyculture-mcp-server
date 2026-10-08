@@ -1,6 +1,9 @@
-import { cellText, deltaText, edgePartial, fmt, partialNote, safeHref, type Block, type Cell, type Column, type Report, type Tile } from "./model.js";
+import { cellText, deltaText, edgePartial, fmt, humanDates, partialNote, safeHref, type Block, type Cell, type Column, type Report, type Tile } from "./model.js";
 import { NARROW, WIDE, chartSvg as chartSvgAt, sparkSvg, visualEmpty, visualSvg } from "./svg.js";
-import { BG, HIVIS, HIVIS_DEEP, INK, INK_2, LINE, PANEL, PANEL_DIM, PANEL_INK, PAPER, RISK, RISK_TINT, esc } from "./tokens.js";
+import { BG, HIVIS, HIVIS_DEEP, INK, INK_2, LINE, PANEL, PANEL_DIM, PANEL_INK, PAPER, RISK, RISK_TEXT, RISK_TINT, esc as escRaw } from "./tokens.js";
+
+/** Escapes text and rewrites any ISO date in it to the one human format ("1 Sep 2026"). */
+const esc = (s: unknown): string => escRaw(humanDates(String(s ?? "")));
 
 /**
  * Self-contained HTML: inline CSS, inline SVG, no scripts, no external requests (no fonts, images
@@ -13,12 +16,13 @@ import { BG, HIVIS, HIVIS_DEEP, INK, INK_2, LINE, PANEL, PANEL_DIM, PANEL_INK, P
  * its design size.
  */
 
-export { esc };
+export { escRaw as esc };
 export const chartSvg = chartSvgAt;
 
 const MONO = `ui-monospace,"Cascadia Mono","SF Mono",Menlo,Consolas,monospace`;
 
 const CSS = `
+:root{--risk:${RISK};--risk-text:${RISK_TEXT};--risk-tint:${RISK_TINT}}
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
 body{margin:0;background:${BG};color:${INK};font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans",sans-serif;font-size:14px;line-height:1.55}
@@ -55,7 +59,7 @@ h2{font-size:19px;margin:0;font-weight:700;letter-spacing:-.01em;break-after:avo
 .tile .vs{color:${INK_2};white-space:nowrap}
 .tile .chip{display:inline-block;white-space:nowrap;padding:2px 8px;border-radius:999px;background:oklch(0.95 0.004 250);color:${INK};font-variant-numeric:tabular-nums}
 .tile .chip.better{background:${HIVIS};color:${INK}}
-.tile .chip.worse{background:${RISK_TINT};color:${RISK}}
+.tile .chip.worse{background:var(--risk-tint);color:var(--risk-text)}
 .tile .note{font-size:12px;color:${INK_2};margin:8px 0 0;line-height:1.4}
 .spark-row{display:flex;align-items:center;gap:8px;margin-top:auto;padding-top:10px}
 .spark-row svg.spark{display:block;width:auto;max-width:132px;min-width:0;height:30px;flex:1 1 0}
@@ -84,13 +88,20 @@ ul.plain{margin:6px 0;padding-left:18px}ul.plain li{margin:3px 0}
 .unavail{border:1px dashed ${INK_2};border-radius:10px;padding:12px 16px;margin:8px 0 14px;background:oklch(0.975 0.002 250)}
 .unavail-tag{font-family:${MONO};font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:${INK_2};margin:0 0 4px}
 .unavail p:last-child{margin:0}
+.brief{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0;margin:4px 0 8px;break-inside:avoid}
+.brief div{padding:12px 18px 4px 0;border-top:3px solid ${INK};margin-right:18px}
+.brief div:last-child{margin-right:0}
+.brief dt{font-family:${MONO};font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:${INK_2};margin:0 0 6px}
+.brief dd{margin:0;font-size:14.5px;line-height:1.5;text-wrap:pretty}
+.brief dd b{font-weight:680;font-variant-numeric:tabular-nums}
+.lead{break-inside:avoid}.lead.solo{break-after:avoid}
 .notes{color:${INK_2};font-size:12.5px;margin:8px 0 0;padding:0 0 0 18px}
 .notes-title{font-family:${MONO};font-size:11.5px;color:${INK_2};margin:14px 0 0;text-transform:uppercase;letter-spacing:.06em}
 footer{margin:0 32px;padding:14px 0 24px;border-top:1px solid ${LINE};color:${INK_2};font-size:12px}
 @page{size:A4;margin:14mm}
-@media print{body{background:${PAPER};font-size:12px}main{max-width:none;margin:0;border:0;border-radius:0;box-shadow:none;overflow:visible}.cover{padding:22px 24px}.body{padding:22px 0 0}footer{margin:0}section{break-inside:auto}.exhibit,.tile,.tiles,.chart,.table-wrap,.unavail,.exec{break-inside:avoid}tr{break-inside:avoid}h2,.sec-head,.ex-title{break-after:avoid}.viz-w{display:block}.viz-n{display:none}a{color:${INK};text-decoration:none}.table-wrap{overflow:visible}}
+@media print{body{background:${PAPER};font-size:12px}main{max-width:none;margin:0;border:0;border-radius:0;box-shadow:none;overflow:visible}.cover{padding:22px 24px}.body{padding:22px 0 0}footer{margin:0}section{break-inside:auto}.exhibit,.tile,.tiles,.chart,.unavail,.exec,.brief,.lead{break-inside:avoid}.table-wrap{break-inside:auto}thead{display:table-header-group}table{font-size:11.5px}th{padding:5px 8px}td{padding:4px 8px}tbody tr:nth-child(-n+2){break-after:avoid}tr{break-inside:avoid}h2,.sec-head,.ex-title,.intro{break-after:avoid}.viz-w{display:block}.viz-n{display:none}a{color:${INK};text-decoration:none}.table-wrap{overflow:visible}}
 @media (max-width:980px){main{margin:0;border:0;border-radius:0}}
-@media (max-width:760px){.tiles,.tiles.n3,.tiles.n5{grid-template-columns:repeat(2,minmax(0,1fr))}.meta{grid-template-columns:repeat(2,minmax(0,1fr))}.exec{grid-template-columns:1fr}}
+@media (max-width:760px){.tiles,.tiles.n3,.tiles.n5{grid-template-columns:repeat(2,minmax(0,1fr))}.meta{grid-template-columns:repeat(2,minmax(0,1fr))}.exec{grid-template-columns:1fr}.brief{grid-template-columns:1fr}.brief div{margin-right:0;padding-bottom:12px}}
 @media (max-width:640px){.viz-w{display:none}.viz-n{display:block}}
 @media (max-width:480px){.cover{padding:22px 16px 20px}.body{padding:22px 16px 32px}footer{margin:0 16px}h1{font-size:24px}.tile{padding:12px}.tile .value{font-size:24px}.tiles{gap:10px}th,td{padding:6px 8px}.exec-body{font-size:15px}}
 `;
@@ -125,7 +136,7 @@ function tileHtml(t: Tile): string {
 
 /** Wraps numbers in <b> so the executive summary scans; text is escaped piecewise. */
 function emphNumbers(s: string): string {
-  return s
+  return humanDates(s)
     .split(/(\d[\d,]*(?:\.\d+)?%?)/)
     .map((part, i) => (i % 2 ? `<b>${esc(part)}</b>` : esc(part)))
     .join("");
@@ -174,6 +185,8 @@ function blockHtml(b: Block, next: () => number): string {
     case "notes":
       if (!b.items.length) return "";
       return `${b.title ? `<p class="notes-title">${esc(b.title)}</p>` : ""}<ul class="notes">${b.items.map((n) => `<li>${esc(n)}</li>`).join("")}</ul>`;
+    case "brief":
+      return `<dl class="brief">${b.items.map((i) => `<div><dt>${esc(i.label)}</dt><dd>${emphNumbers(i.text)}</dd></div>`).join("")}</dl>`;
   }
 }
 
@@ -190,10 +203,16 @@ export function renderHtml(r: Report): string {
   const next = () => ++n;
   const sections = r.sections
     .map(
-      (s, i) =>
-        `<section><div class="sec-head"><span class="sec-num">${String(i + 1).padStart(2, "0")}</span><h2>${esc(s.title)}</h2></div>${s.intro ? `<p class="intro">${esc(s.intro)}</p>` : ""}${s.blocks.map((b) => blockHtml(b, next)).join("")}</section>`,
-    )
-    .join("\n");
+      (s, i) => {
+        // The heading, intro and first block travel together, so a heading is never orphaned at a page foot.
+        // A table may break across pages, so it stays outside the unbreakable lead (its header row repeats).
+        const html = s.blocks.map((b) => blockHtml(b, next));
+        const keep = s.blocks[0] && s.blocks[0].kind !== "table" ? 1 : 0;
+        return `<section><div class="lead${keep ? "" : " solo"}"><div class="sec-head"><span class="sec-num">${String(i + 1).padStart(2, "0")}</span><h2>${esc(s.title)}</h2></div>${s.intro ? `<p class="intro">${esc(s.intro)}</p>` : ""}${html.slice(0, keep).join("")}</div>${html.slice(keep).join("")}</section>`;
+      },
+    );
+  // A report that opens with a brief (the board pack) shows it first, above the executive summary.
+  const opensWithBrief = r.sections[0]?.blocks[0]?.kind === "brief";
   const summary = r.summary?.length
     ? `<section class="exec"><p class="exec-label">Executive summary</p><p class="exec-body">${r.summary.map(emphNumbers).join(" ")}</p></section>`
     : "";
@@ -220,8 +239,9 @@ ${r.subtitle ? `<p class="subtitle">${esc(r.subtitle)}</p>` : ""}
 </dl>
 </header>
 <div class="body">
+${opensWithBrief ? (sections[0] ?? "") : ""}
 ${summary}
-${sections}
+${(opensWithBrief ? sections.slice(1) : sections).join("\n")}
 </div>
 <footer>Computed locally from cached Mitti Data Feeds by safetyculture-mcp. Organisation shown as a fingerprint, not a name. Figures reflect the cache at generation time; see the data coverage notes. Independent open-source project, not affiliated with SafetyCulture Pty Ltd or Mitti.</footer>
 </main>
