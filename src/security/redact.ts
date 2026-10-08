@@ -44,7 +44,7 @@ const TOKEN_PATTERNS: RegExp[] = [
   /\b[a-f0-9]{64}\b/g,
 ];
 const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
-const PHONE = /(?<![\w-])\+?\d[\d\s().-]{7,}\d(?![\w-])/g;
+const PHONE = /(?<![\w-])(?:\+|\()?\d[\d\s().-]{7,}\d(?![\w-])/g;
 
 /** Removes anything that looks like an API token or bearer header from free text. */
 export function redactSecrets(text: string): string {
