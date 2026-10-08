@@ -17,3 +17,7 @@ captures/
 .claude/worktrees/
 mcpb/build/
 *.mcpb
+
+# Internal working files (kept locally, not published)
+docs/waves/
+STATE.md
