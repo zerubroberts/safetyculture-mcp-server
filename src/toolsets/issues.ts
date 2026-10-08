@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { ToolError } from "../core/errors.js";
 import { countBy, links, P } from "../core/params.js";
-import { defineTool, type ToolContext } from "../core/registry.js";
+import { defineTool, type ToolContext, errorMessage } from "../core/registry.js";
 import { parsePeriod } from "../core/time.js";
 
 /**
@@ -400,7 +400,7 @@ export const issuesTools = [
           await ctx.client.put(`/tasks/v1/incidents/${encodeURIComponent(id)}/priority`, { priority_id: ISSUE_PRIORITY[a.priority] });
           applied.push("priority");
         } catch (e) {
-          failed.push({ field: "priority", error: e instanceof Error ? e.message : String(e) });
+          failed.push({ field: "priority", error: errorMessage(e, ctx.config) });
         }
       }
       if (a.due_at) {
@@ -408,7 +408,7 @@ export const issuesTools = [
           await ctx.client.put(`/tasks/v1/incidents/${encodeURIComponent(id)}/due_at`, { due_at: new Date(a.due_at).toISOString() });
           applied.push("due_at");
         } catch (e) {
-          failed.push({ field: "due_at", error: e instanceof Error ? e.message : String(e) });
+          failed.push({ field: "due_at", error: errorMessage(e, ctx.config) });
         }
       }
       if (a.assignees?.length) {
@@ -416,7 +416,7 @@ export const issuesTools = [
           await ctx.client.post(`/tasks/v1/incidents/${encodeURIComponent(id)}/collaborators/add`, { collaborators: toCollaborators(a.assignees) });
           applied.push("assignees");
         } catch (e) {
-          failed.push({ field: "assignees", error: e instanceof Error ? e.message : String(e) });
+          failed.push({ field: "assignees", error: errorMessage(e, ctx.config) });
         }
       }
       return {
@@ -480,7 +480,7 @@ export const issuesTools = [
           await call();
           changed.push(field);
         } catch (e) {
-          failed.push({ field, error: e instanceof Error ? e.message : String(e) });
+          failed.push({ field, error: errorMessage(e, ctx.config) });
         }
       }
       return {

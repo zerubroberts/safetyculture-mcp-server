@@ -2,7 +2,7 @@ import { z } from "zod";
 import { ToolError } from "../core/errors.js";
 import { ids, links, P } from "../core/params.js";
 import type { FeedPage } from "../core/client.js";
-import { defineTool, type ToolContext } from "../core/registry.js";
+import { defineTool, type ToolContext, errorMessage } from "../core/registry.js";
 import { parsePeriod } from "../core/time.js";
 
 /**
@@ -575,7 +575,7 @@ export const inspectionsTools = [
           await ctx.client.put(`${base}/owner`, { owner_id: a.owner_id });
           changed.push("owner");
         } catch (e) {
-          failed.push({ field: "owner", error: e instanceof Error ? e.message : String(e) });
+          failed.push({ field: "owner", error: errorMessage(e, ctx.config) });
         }
       }
       if (a.site_id !== undefined) {
@@ -583,7 +583,7 @@ export const inspectionsTools = [
           await ctx.client.put(`${base}/site`, { site_id: a.site_id });
           changed.push("site");
         } catch (e) {
-          failed.push({ field: "site", error: e instanceof Error ? e.message : String(e) });
+          failed.push({ field: "site", error: errorMessage(e, ctx.config) });
         }
       }
       if (a.answers?.length) {
@@ -609,7 +609,7 @@ export const inspectionsTools = [
           await ctx.client.put(`/inspections/integration/v1/inspections/${encodeURIComponent(a.inspection_id)}`, { items });
           changed.push(`answers(${a.answers.length})`);
         } catch (e) {
-          failed.push({ field: "answers", error: e instanceof Error ? e.message : String(e) });
+          failed.push({ field: "answers", error: errorMessage(e, ctx.config) });
         }
       }
       if (!changed.length && !failed.length) throw new ToolError("Nothing to update: pass owner_id, site_id or at least one answer.");

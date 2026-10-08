@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { ToolError } from "../core/errors.js";
 import { P } from "../core/params.js";
-import { defineTool } from "../core/registry.js";
+import { defineTool, errorMessage } from "../core/registry.js";
 
 /**
  * Assets, asset types/fields and maintenance.
@@ -478,7 +478,7 @@ export const assetsTools = [
           await call();
           changed.push(field);
         } catch (e) {
-          failed.push({ field, error: e instanceof Error ? e.message : String(e) });
+          failed.push({ field, error: errorMessage(e, ctx.config) });
         }
       }
       return {

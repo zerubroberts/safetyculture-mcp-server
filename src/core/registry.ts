@@ -300,7 +300,7 @@ export function errorText(err: unknown, cfg?: Pick<Config, "pii" | "apiToken">):
 export function errorMessage(err: unknown, cfg?: Pick<Config, "pii" | "apiToken">): string {
   const mask = (s: string) => (cfg ? maskFreeText(s, cfg.pii, keyFor(cfg)) : redactSecrets(s));
   const strict = cfg?.pii === "strict";
-  if (err instanceof ScApiError) return strict ? `${err.withoutBody} (The API's message is withheld at SC_PII=strict.)` : mask(err.message);
+  if (err instanceof ScApiError) return strict ? `${err.message} (The API's message is withheld at SC_PII=strict.)` : mask(err.fullMessage);
   if (err instanceof ToolError || err instanceof z.ZodError) return mask(err.message);
   if (strict) return "Unexpected error (details withheld at SC_PII=strict).";
   return mask(`Unexpected error: ${err instanceof Error ? err.message : String(err)}`);

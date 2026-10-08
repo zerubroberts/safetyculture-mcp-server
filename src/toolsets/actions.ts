@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { ToolError } from "../core/errors.js";
 import { countBy, ids, links, P } from "../core/params.js";
-import { defineTool, type ToolContext } from "../core/registry.js";
+import { defineTool, type ToolContext, errorMessage } from "../core/registry.js";
 import { parsePeriod } from "../core/time.js";
 
 /**
@@ -365,7 +365,7 @@ export const actionTools = [
           await call();
           changed.push(field);
         } catch (e) {
-          failed.push({ field, error: e instanceof Error ? e.message : String(e) });
+          failed.push({ field, error: errorMessage(e, ctx.config) });
         }
       }
       return {
@@ -433,7 +433,7 @@ export const actionTools = [
             });
           results.updated++;
         } catch (e) {
-          results.failed.push({ id: t.id, error: e instanceof Error ? e.message : String(e) });
+          results.failed.push({ id: t.id, error: errorMessage(e, ctx.config) });
         }
       }
       return { summary: `Updated ${results.updated} of ${targets.length} actions.${results.failed.length ? ` ${results.failed.length} failed.` : ""}`, data: results };

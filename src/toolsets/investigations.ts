@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { ToolError } from "../core/errors.js";
 import { P } from "../core/params.js";
-import { defineTool, type ToolContext } from "../core/registry.js";
+import { defineTool, type ToolContext, errorMessage } from "../core/registry.js";
 
 /**
  * Toolset "investigations" (plus the OSHA injury-record endpoints that live
@@ -366,7 +366,7 @@ export const investigationsTools = [
           await call();
           changed.push(field);
         } catch (e) {
-          failed.push({ field, error: e instanceof Error ? e.message : String(e) });
+          failed.push({ field, error: errorMessage(e, ctx.config) });
         }
       }
       return {

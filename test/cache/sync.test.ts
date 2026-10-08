@@ -88,7 +88,7 @@ describe("cache sync", () => {
       ["contractor_companies", true, null],
       ["sites", false, null],
     ]);
-    expect(reports[0]!.unavailable).toContain("module not enabled");
+    expect(reports[0]!.unavailable).toContain("HTTP 403"); // fixed reason only: the API reply text is never stored
     const d = store.details(["credentials", "sites"]);
     expect(d[0]).toMatchObject({ rows: 0, complete: true, last_error: null });
     expect(d[0]!.unavailable).toContain("HTTP 403");
@@ -109,7 +109,7 @@ describe("cache sync", () => {
     expect(r.error).toMatch(/no longer current/);
     const [s] = store.status(["sites"]);
     expect(s).toMatchObject({ rows: 1, complete: false, last_synced_at: "2026-10-08T00:00:00.000Z" });
-    expect(s!.unavailable).toContain("no permission");
+    expect(s!.unavailable).toContain("lacks permission");
     expect(s!.last_error).toMatch(/Access refused/);
   });
 

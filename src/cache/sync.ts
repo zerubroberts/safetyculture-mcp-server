@@ -153,14 +153,8 @@ export function maxTime(rows: Record<string, unknown>[], field: string | undefin
 }
 
 /** The API's own explanation from an error body, trimmed; falls back to the status line. */
+// Feed status is stored in the cache and quoted in many outputs, at any privacy level, so it never
+// carries the API's own reply text (which can quote names): status code and a fixed reason only.
 function apiMessage(err: ScApiError): string {
-  let msg = "";
-  try {
-    const body = JSON.parse(err.body) as { message?: unknown; error?: unknown };
-    msg = typeof body.message === "string" ? body.message : typeof body.error === "string" ? body.error : "";
-  } catch {
-    msg = err.body;
-  }
-  msg = msg.trim().slice(0, 300);
-  return `HTTP ${err.status}${msg ? `: ${msg}` : ""} (module not licensed for this organisation, or the token's user lacks permission).`;
+  return `HTTP ${err.status} (module not licensed for this organisation, or the token's user lacks permission)`;
 }

@@ -220,3 +220,31 @@ describe("pass 3 re-verification round 2: strict never quotes upstream error bod
     expect((await call("sc_get_action", { action_id: "a1" })).text).toContain("due_at is invalid");
   });
 });
+
+describe("pass 3 re-verification round 3: no path carries the upstream body at strict", () => {
+  const evil = JSON.stringify({ message: "Zelda Quorn has no seat", user: { firstname: "Zelda", lastname: "Quorn" } });
+
+  it("partial-failure lists in write results withhold the API message at strict", async () => {
+    const api = new MockApi()
+      .on("GET /tasks/v1/actions/a1", { action: { task: { task_id: "a1", title: "t", status_id: "x" } } })
+      .on("^/tasks/", () => new Response(evil, { status: 400 }));
+    for (const m of ["PUT", "POST", "PATCH"]) api.on(`${m} ^/tasks/`, () => new Response(evil, { status: 400 }));
+    const { call } = await connect(api, { SC_PII: "strict", SC_MODE: "write" });
+    const r = await call("sc_update_action", { action_id: "a1", title: "new title" });
+    expect(r.text).toContain("withheld at SC_PII=strict");
+    expect(r.text).not.toMatch(/zelda|quorn/i);
+  });
+
+  it("feed status never stores the API's reply text", async () => {
+    const { ScApiError } = await import("../../src/core/errors.js");
+    const e = new ScApiError(403, "GET", "/feed/actions", evil);
+    expect(e.message).not.toMatch(/zelda/i);
+    expect(e.fullMessage).toMatch(/Zelda/);
+  });
+
+  it("whole-word, accent-normalised replacement", async () => {
+    const { applyReplacements } = await import("../../src/security/redact.js");
+    expect(applyReplacements("Total value at the table, Al said", new Map([["Al", "person_1"]]))).toBe("Total value at the table, person_1 said");
+    expect(applyReplacements("José called", new Map([["José", "person_2"]]))).toBe("person_2 called");
+  });
+});

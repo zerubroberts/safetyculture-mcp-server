@@ -108,10 +108,13 @@ function looksLikePhone(raw: string): boolean {
 
 /** Replaces collected originals with their pseudonyms, longest first ("Alex Carter" before "Alex"). */
 export function applyReplacements(text: string, replaced: Map<string, string>): string {
-  let out = text;
+  let out = text.normalize("NFC");
   for (const [original, alias] of [...replaced.entries()].sort((a, b) => b[0].length - a[0].length)) {
-    // Case-insensitive, so "ZELDA QUORN" in prose is caught when the record says "Zelda Quorn".
-    if (original.length >= 2) out = out.replace(new RegExp(original.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), () => alias);
+    // Case-insensitive and accent-normalised (NFC), so "ZELDA QUORN" is caught when the record says
+    // "Zelda Quorn"; whole words only, so a short name like "Al" never rewrites "Total".
+    if (original.length < 2) continue;
+    const escaped = original.normalize("NFC").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    out = out.replace(new RegExp(`(?<![\\p{L}\\p{N}\\p{M}])${escaped}(?![\\p{L}\\p{N}\\p{M}])`, "giu"), () => alias);
   }
   return out;
 }

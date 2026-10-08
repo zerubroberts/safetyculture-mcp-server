@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { ToolError } from "../core/errors.js";
 import { ids, P } from "../core/params.js";
-import { defineTool, type ToolContext } from "../core/registry.js";
+import { defineTool, type ToolContext, errorMessage } from "../core/registry.js";
 import { parsePeriod } from "../core/time.js";
 
 /**
@@ -307,7 +307,7 @@ export const schedulesTools = [
           old = (legacy.items ?? []).map(projectLegacyItem);
           if (legacy.next_page_token) next = { phase: "legacy", token: legacy.next_page_token };
         } catch (e) {
-          legacyNote = ` Legacy items unavailable: ${e instanceof Error ? e.message : String(e)}`;
+          legacyNote = ` Legacy items unavailable: ${errorMessage(e, ctx.config)}`;
         }
       }
       const rows = [...current, ...old];

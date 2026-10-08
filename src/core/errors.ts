@@ -7,13 +7,16 @@ export class ScApiError extends Error {
     readonly path: string,
     readonly body: string,
   ) {
-    super(ScApiError.describe(status, method, path, body));
+    // The upstream body is never part of .message: messages get copied into result data, cache
+    // status and logs, and a body can quote record text or names. Use fullMessage where the
+    // privacy policy allows the API's own words to be shown.
+    super(ScApiError.describe(status, method, path, status === 0 ? body : "")); // status 0 = local error (network, host pin): our own text
     this.name = "ScApiError";
   }
 
-  /** The same message without the upstream body (used at SC_PII=strict, where bodies can quote names). */
-  get withoutBody(): string {
-    return ScApiError.describe(this.status, this.method, this.path, "");
+  /** The message plus the API's own reply (secrets redacted, cut to 600 characters). */
+  get fullMessage(): string {
+    return ScApiError.describe(this.status, this.method, this.path, this.body);
   }
 
   static describe(status: number, method: string, path: string, body: string): string {
