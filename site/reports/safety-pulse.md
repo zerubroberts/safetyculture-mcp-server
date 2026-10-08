@@ -2,7 +2,7 @@
 
 All sites
 
-Organisation **2a44c2ca31** · Period **last 7 days (2026-10-02 to 2026-10-08)** · Generated **8 Oct 2026, 03:20 UTC** · Data from Mitti via safetyculture-mcp
+Organisation **2a44c2ca31** · Period **last 7 days (2026-10-02 to 2026-10-08)** · Generated **8 Oct 2026, 04:24 UTC** · Data from Mitti via safetyculture-mcp
 
 ## Needs attention
 
@@ -88,17 +88,17 @@ _† partial week: the first or last bucket covers fewer days, so its count read
 
 ## Data coverage
 
-As of 8 Oct 2026, 03:20 UTC. Every figure is computed from these cached feeds; a feed that is missing or partial makes related figures missing or understated, not zero.
+As of 8 Oct 2026, 04:24 UTC. Every figure is computed from these cached feeds; a feed that is missing or partial makes related figures missing or understated, not zero.
 
 | Feed | Rows | Last synced | Coverage |
 |---|---:|---|---|
-| inspections | 1,809 | 8 Oct 2026, 03:20 UTC | complete |
-| inspection\_items | 32,165 | 8 Oct 2026, 03:20 UTC | complete |
-| actions | 431 | 8 Oct 2026, 03:20 UTC | complete |
-| issues | 120 | 8 Oct 2026, 03:20 UTC | complete |
-| schedule\_occurrences | 384 | 8 Oct 2026, 03:20 UTC | complete |
-| sites | 15 | 8 Oct 2026, 03:20 UTC | complete |
-| templates | 10 | 8 Oct 2026, 03:20 UTC | complete |
+| inspections | 1,809 | 8 Oct 2026, 04:24 UTC | complete |
+| inspection\_items | 32,165 | 8 Oct 2026, 04:24 UTC | complete |
+| actions | 431 | 8 Oct 2026, 04:24 UTC | complete |
+| issues | 120 | 8 Oct 2026, 04:24 UTC | complete |
+| schedule\_occurrences | 384 | 8 Oct 2026, 04:24 UTC | complete |
+| sites | 15 | 8 Oct 2026, 04:24 UTC | complete |
+| templates | 10 | 8 Oct 2026, 04:24 UTC | complete |
 
 **Method**
 
