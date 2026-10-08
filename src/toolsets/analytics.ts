@@ -123,6 +123,7 @@ export const analyticsTools: AnyToolSpec[] = [
       horizon: z.string().optional().describe('How far ahead to look, e.g. "next 30 days", "next 90 days" or "2026-10-01..2026-12-31". Default: next 30 days.'),
       credential_types: z.array(z.string()).optional().describe("Only credential types whose name contains one of these (case-insensitive) or with these type IDs."),
       include_expired: z.boolean().optional().describe("Include already-expired credentials (default true)."),
+      limit: P.limit(50, 500),
     },
     run: async (a, ctx) => {
       const cache = await ctx.cache.ensure(FEEDS.credentials);

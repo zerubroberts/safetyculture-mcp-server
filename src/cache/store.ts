@@ -85,13 +85,14 @@ export class SqliteCache implements CacheWriter {
   }
 
   status(feeds: FeedName[] = FEED_NAMES): FeedStatus[] {
-    return this.details(feeds).map(({ feed, rows, last_synced_at, watermark, complete, last_error }) => ({
+    return this.details(feeds).map(({ feed, rows, last_synced_at, watermark, complete, last_error, unavailable }) => ({
       feed,
       rows,
       last_synced_at,
       watermark,
       complete,
       last_error,
+      ...(unavailable ? { unavailable } : {}),
     }));
   }
 

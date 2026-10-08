@@ -145,15 +145,20 @@ export function analyzeSiteLeague(
       inspections: s.inspections,
       reason: `${s.inspections} completed inspections, below the minimum of ${minN}.`,
     }));
-  const prevRanks = new Map(
-    rankSites(
-      [...siteStats(cache, prev, actions, args.site_ids, now).values()].filter((s) => s.inspections >= minN),
-      metrics,
-    ).map((r) => [canon(r.s.site_id), r.rank]),
-  );
+  // Open overdue actions at the previous cutoff would need each action's due date, site and status as
+  // they stood then. The cache holds only current values, and action_timeline_items documents no
+  // item_type/item_data schema to replay them, so the previous rank leaves that metric out and the rank
+  // change compares both periods on the same remaining metrics.
+  const histMetrics = metrics.filter((m) => m !== "overdue_actions");
+  const rankMap = (stats: SiteStats[]) => new Map(rankSites(stats, histMetrics).map((r) => [canon(r.s.site_id), r.rank]));
+  const prevRanks = histMetrics.length
+    ? rankMap([...siteStats(cache, prev, actions, args.site_ids, now).values()].filter((s) => s.inspections >= minN))
+    : new Map<string, number>();
+  const comparableRanks = histMetrics.length < metrics.length && histMetrics.length ? rankMap(eligible) : undefined;
 
   const table: LeagueRow[] = rankSites(eligible, metrics).map(({ s, v, composite, rank }) => {
     const pr = prevRanks.get(canon(s.site_id)) ?? null;
+    const comparable = comparableRanks?.get(canon(s.site_id)) ?? rank;
     return {
       rank,
       site: names.sites.get(s.site_id) ?? s.site_id,
@@ -166,7 +171,7 @@ export function analyzeSiteLeague(
       median_resolution_days: v.median_resolution_days === null ? null : round(v.median_resolution_days, 1),
       composite: round(composite, 3) ?? 0,
       previous_rank: pr,
-      rank_change: pr === null ? null : pr - rank,
+      rank_change: pr === null ? null : pr - comparable,
     };
   });
 
@@ -176,6 +181,12 @@ export function analyzeSiteLeague(
     "Open overdue actions are counted as at the end of the period (or now), reconstructed from created, due and completed dates.",
     "Sites with no completed inspections in the period are not listed.",
   ];
+  if (period.to.getTime() < now.getTime() && metrics.includes("overdue_actions"))
+    caveats.push("The period ended before now, so its open overdue count uses each action's current due date, site and status; changes made since the period ended are not replayed.");
+  if (!histMetrics.length)
+    caveats.push("No previous-period rank: open overdue actions at an earlier date cannot be reconstructed from the cache (only current due dates, sites and statuses are stored), so rank change is not available for this metric.");
+  else if (comparableRanks)
+    caveats.push(`Previous-period rank leaves out open overdue actions, which cannot be reconstructed for an earlier date from the cache (only current due dates, sites and statuses are stored). Rank change compares both periods on ${histMetrics.join(", ")} only, so it can differ from previous_rank minus rank.`);
   if (table.length < 3) caveats.push("Fewer than three sites qualify, so z-scores carry little information.");
   const unsited = [...completedInspections(cache, period, { site_ids: args.site_ids }).values()].filter((i) => !i.site_id).length;
   if (unsited) caveats.push(`${unsited} completed inspections have no site and are not in the league.`);
@@ -190,7 +201,7 @@ export function analyzeSiteLeague(
     metrics: { ranked_sites: table.length, below_minimum: below.length, min_inspections: minN, metrics_used: metrics.join(", ") },
     table,
     method:
-      "For each metric, sites get a z-score (population SD across ranked sites), signed so higher is better (failed-item rate, overdue actions and resolution days count against). Composite = equal-weight mean of the available z-scores; rank change = previous-period rank minus current rank.",
+      "For each metric, sites get a z-score (population SD across ranked sites), signed so higher is better (failed-item rate, overdue actions and resolution days count against). Composite = equal-weight mean of the available z-scores; rank change = previous-period rank minus current rank, both ranked on the chosen metrics except open overdue actions (not reconstructable for the previous period).",
     caveats,
     now,
   });

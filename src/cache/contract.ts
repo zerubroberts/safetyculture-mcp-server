@@ -58,6 +58,8 @@ export interface FeedStatus {
   watermark: string | null;
   complete: boolean;
   last_error: string | null;
+  /** Set when the API refused the feed (403/404: module not licensed or no permission). */
+  unavailable?: string | null;
 }
 
 export interface SyncReport {
@@ -96,7 +98,17 @@ export interface AnalyticResult<Row = Record<string, unknown>> {
   period?: { from: string; to: string; label: string };
   filters: Record<string, unknown>;
   as_of: string;
-  coverage: Array<Pick<FeedStatus, "feed" | "rows" | "last_synced_at" | "complete"> & { note?: string }>;
+  coverage: Array<
+    Pick<FeedStatus, "feed" | "rows" | "last_synced_at" | "complete"> & {
+      note?: string;
+      /** The API refused the feed (module not licensed or no permission). */
+      unavailable?: string;
+      /** Why the latest refresh failed; the cached rows predate it. */
+      last_error?: string;
+      /** Minutes since the last successful sync, relative to as_of. */
+      age_minutes?: number;
+    }
+  >;
   metrics: Record<string, number | string | null>;
   table: Row[];
   method: string;

@@ -23,6 +23,18 @@ describe("parsePeriod", () => {
     expect([iso(p.from), iso(p.to)]).toEqual([from, to]);
   });
 
+  it.each([
+    // [now, input, from, to (exclusive)]: month/year shifts clamp to the last valid day, never overflow.
+    ["2026-05-31T03:00:00Z", "last 1 month", "2026-05-01", "2026-06-01"],
+    ["2026-03-31T03:00:00Z", "last 1 month", "2026-03-01", "2026-04-01"],
+    ["2026-10-08T03:00:00Z", "6m", "2026-04-09", "2026-10-09"],
+    ["2024-02-29T03:00:00Z", "last 1 year", "2023-03-01", "2024-03-01"],
+    ["2026-01-31T03:00:00Z", "next 1 month", "2026-01-31", "2026-03-01"],
+  ])("rolling months/years clamp the day: on %s, %s", (at, input, from, to) => {
+    const p = parsePeriod(input, new Date(at));
+    expect([iso(p.from), iso(p.to)]).toEqual([from, to]);
+  });
+
   it("rejects nonsense with a helpful message", () => {
     expect(() => parsePeriod("whenever", now)).toThrow(/Try "last 30 days"/);
   });

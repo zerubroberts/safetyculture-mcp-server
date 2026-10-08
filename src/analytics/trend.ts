@@ -1,5 +1,5 @@
 import type { CacheReader } from "../cache/contract.js";
-import type { Period } from "../core/time.js";
+import { addMonths, type Period } from "../core/time.js";
 import { bool, buildResult, num, str } from "./common.js";
 import { FAILABLE_TYPES, canon, isAnswered as coreIsAnswered, isFailed as coreIsFailed, normLabel as coreNormLabel } from "./failed-items.js";
 import { isResolved, normPriority, normStatus, toAction } from "./backlog.js";
@@ -269,10 +269,8 @@ export function buckets(p: Period, grain: Grain): Bucket[] {
 /** The same bucket one year earlier: 52 weeks back for weeks (keeps the weekday), same month for months. */
 export function lastYear(b: Bucket, grain: Grain): { from: number; to: number } {
   if (grain === "week") return { from: b.from - 364 * DAY_MS, to: b.to - 364 * DAY_MS };
-  const shift = (t: number) => {
-    const d = new Date(t);
-    return Date.UTC(d.getUTCFullYear() - 1, d.getUTCMonth(), d.getUTCDate(), d.getUTCHours(), d.getUTCMinutes());
-  };
+  // Clamped calendar shift: a leap day maps to Feb 28, never overflowing into March.
+  const shift = (t: number) => addMonths(new Date(t), -12).getTime();
   return { from: shift(b.from), to: shift(b.to) };
 }
 

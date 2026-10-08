@@ -1,7 +1,7 @@
 import type { CacheReader } from "../cache/contract.js";
 import { links } from "../core/params.js";
 import type { Period } from "../core/time.js";
-import { buildResult, groupBy } from "./common.js";
+import { bounded, buildResult, groupBy } from "./common.js";
 import { median, pct, round } from "./stats.js";
 import { FAST_SHARE, MIN_TEMPLATE_DURATIONS, templateMedianDurations } from "./inspectors.js";
 import { completedInspections, isoDay, itemCounts, itemsByInspection, type Insp, type ScopeFilter } from "./trend.js";
@@ -24,6 +24,8 @@ export const MIN_TEMPLATE_SCORES = 10;
 export interface AnomalyArgs extends ScopeFilter {
   kinds: AnomalyKind[];
   period: Period;
+  /** Max flags returned (default 50), most severe of each kind first; counts always cover every flag. */
+  limit?: number;
 }
 
 export interface AnomalyRow {
@@ -58,6 +60,32 @@ const base = (k: AnomalyKind, i: Insp, reason: string, evidence: AnomalyRow["evi
 });
 
 const chrono = (a: Insp, b: Insp) => a.completedAt - b.completedAt || a.id.localeCompare(b.id);
+
+/** How strongly a flag matches its own pattern (higher = stronger); only compared within one kind. */
+const severity = (r: AnomalyRow): number => {
+  const e = r.evidence;
+  const n = (v: unknown) => (typeof v === "number" ? v : 0);
+  if (r.kind === "too_fast") return -n(e.share_of_median_pct);
+  if (r.kind === "perfect_streak") return n(e.streak_length);
+  if (r.kind === "duplicate_burst") return n(e.inspections_in_burst);
+  return Math.abs(n(e.robust_z));
+};
+
+/**
+ * Stable ranking for a capped list: within each kind strongest first (then oldest, then ID), and the kinds
+ * interleaved in ANOMALY_KINDS order, so a limit keeps the strongest flags of every kind checked.
+ */
+export function rankAnomalies(rows: AnomalyRow[]): AnomalyRow[] {
+  const perKind = ANOMALY_KINDS.map((k) =>
+    rows
+      .filter((r) => r.kind === k)
+      .sort((a, b) => severity(b) - severity(a) || a.completed_at.localeCompare(b.completed_at) || a.inspection_id.localeCompare(b.inspection_id)),
+  );
+  const out: AnomalyRow[] = [];
+  const longest = Math.max(0, ...perKind.map((l) => l.length));
+  for (let i = 0; i < longest; i++) for (const list of perKind) if (i < list.length) out.push(list[i]!);
+  return out;
+}
 
 export function computeAnomalies(cache: CacheReader, args: AnomalyArgs, now: Date) {
   const window = { from: args.period.from.getTime(), to: args.period.to.getTime() };
@@ -186,8 +214,15 @@ export function computeAnomalies(cache: CacheReader, args: AnomalyArgs, now: Dat
     checked.score_outlier_checked = n;
   }
 
-  table.sort((a, b) => a.kind.localeCompare(b.kind) || a.completed_at.localeCompare(b.completed_at) || a.inspection_id.localeCompare(b.inspection_id));
+  const ranked = rankAnomalies(table);
+  const shown = bounded(ranked, args.limit);
   const byKind = Object.fromEntries(args.kinds.map((k) => [k, table.filter((r) => r.kind === k).length]));
+  const caveats = [
+    "These are patterns to review, not evidence of wrongdoing. Short walk-throughs, well-run areas, batch data entry after an outage and offline syncs all produce the same patterns.",
+    "Duration is the feed's duration field, read as seconds; inspections without a duration are not checked for speed.",
+  ];
+  if (shown.truncated)
+    caveats.push(`Showing ${shown.rows.length} of ${shown.total} flags: the strongest of each kind first, kinds interleaved. Counts per kind cover all ${shown.total}. Raise limit or pick one kind to see the rest.`);
   const result = buildResult({
     version: "anomalies/1",
     period: args.period,
@@ -195,21 +230,21 @@ export function computeAnomalies(cache: CacheReader, args: AnomalyArgs, now: Dat
     cache,
     feeds: ["inspections", ...(kinds.has("perfect_streak") ? (["inspection_items"] as const) : [])],
     metrics: { inspections_in_scope: scoped.length, flagged: table.length, ...byKind, ...checked },
-    table,
+    table: shown.rows,
     method:
       `too_fast: duration under ${FAST_SHARE * 100}% of the template median (templates with >= ${MIN_TEMPLATE_DURATIONS} timed inspections in the period). ` +
       `perfect_streak: >= ${STREAK_MIN} consecutive 100% scores by one inspector on one template whose organisation-wide failed-item rate is >= ${STREAK_TEMPLATE_FAIL_RATE}%. ` +
       `duplicate_burst: >= ${BURST_MIN} inspections of one template by one inspector completed within 5 minutes of the first. ` +
       `score_outlier: robust z = 0.6745 x (score - median) / MAD within the template beyond ${ROBUST_Z} (>= ${MIN_TEMPLATE_SCORES} scored inspections, MAD > 0). Baselines use all completed inspections in the period.`,
-    caveats: [
-      "These are patterns to review, not evidence of wrongdoing. Short walk-throughs, well-run areas, batch data entry after an outage and offline syncs all produce the same patterns.",
-      "Duration is the feed's duration field, read as seconds; inspections without a duration are not checked for speed.",
-    ],
+    caveats,
     now,
   });
   const parts = args.kinds.map((k) => `${byKind[k]} ${k.replace("_", " ")}`).join(", ");
   return {
-    result,
-    summary: `${table.length} inspections match a review pattern over ${args.period.label} (${parts}) out of ${scoped.length} in scope. These are prompts to look closer, not findings about anyone.`,
+    result: { ...result, total: shown.total, truncated: shown.truncated },
+    summary:
+      `${table.length} inspections match a review pattern over ${args.period.label} (${parts}) out of ${scoped.length} in scope` +
+      (shown.truncated ? `; the strongest ${shown.rows.length} are listed` : "") +
+      ". These are prompts to look closer, not findings about anyone.",
   };
 }

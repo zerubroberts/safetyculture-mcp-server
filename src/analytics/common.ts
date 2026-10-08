@@ -9,26 +9,63 @@ import { inPeriod, type Period } from "../core/time.js";
  * - say plainly when a feed is incomplete or empty instead of reporting zeros as facts
  */
 
-export function coverage(cache: CacheReader, feeds: FeedName[]): AnalyticResult["coverage"] {
-  return cache.status(feeds).map(({ feed, rows, last_synced_at, complete, last_error }) => ({
-    feed,
-    rows,
-    last_synced_at,
-    complete,
-    ...(last_error?.startsWith("SYNCING") ? { note: "still syncing" } : {}),
-  }));
+/** Feeds older than this are stale: it matches the re-sync age CacheProvider.ensure uses by default. */
+export const FRESHNESS_MINUTES = 60;
+
+/**
+ * Per-feed coverage. A feed whose latest refresh failed, or that the API now refuses, is never
+ * reported complete even if an earlier snapshot was. Pass `now` to include the cache age.
+ */
+export function coverage(cache: CacheReader, feeds: FeedName[], now?: Date): AnalyticResult["coverage"] {
+  return cache.status(feeds).map(({ feed, rows, last_synced_at, complete, last_error, unavailable }) => {
+    const syncing = Boolean(last_error?.startsWith("SYNCING"));
+    const failed = !syncing && last_error ? last_error.slice(0, 400) : undefined;
+    const age = now && last_synced_at ? Math.floor((now.getTime() - Date.parse(last_synced_at)) / 60_000) : NaN;
+    return {
+      feed,
+      rows,
+      last_synced_at,
+      complete: complete && !failed,
+      ...(syncing ? { note: "still syncing" } : {}),
+      ...(unavailable ? { unavailable } : {}),
+      ...(failed ? { last_error: failed } : {}),
+      ...(Number.isFinite(age) ? { age_minutes: Math.max(0, age) } : {}),
+    };
+  });
 }
+
+const ageText = (min: number) => (min < 120 ? `${min} minutes` : min < 48 * 60 ? `${Math.round(min / 60)} hours` : `${Math.round(min / 1440)} days`);
 
 export function coverageCaveats(cov: AnalyticResult["coverage"]): string[] {
   const out: string[] = [];
   for (const c of cov) {
+    const age = c.age_minutes !== undefined ? ` (${ageText(c.age_minutes)} ago)` : "";
     if (c.note === "still syncing")
       out.push(`Feed "${c.feed}" is still downloading for the first time (the Mitti API serves it slowly); these figures are partial. Ask again in a minute or two for complete numbers.`);
+    else if (c.unavailable && c.rows > 0)
+      out.push(`Feed "${c.feed}" is no longer accessible to this API token (${c.unavailable}); its ${c.rows} cached rows from ${c.last_synced_at ?? "an earlier sync"}${age} are not current, so related figures may be out of date.`);
+    else if (c.unavailable) out.push(`Feed "${c.feed}" is unavailable to this API token (${c.unavailable}), so related figures are missing, not zero.`);
     else if (!c.last_synced_at) out.push(`Feed "${c.feed}" has never been synced, so related figures are missing, not zero.`);
+    else if (c.last_error)
+      out.push(`The latest refresh of feed "${c.feed}" failed (${c.last_error}); figures use rows cached at ${c.last_synced_at}${age} and may be out of date or partial.`);
     else if (!c.complete) out.push(`Feed "${c.feed}" was only partially synced (row cap reached); totals may be understated.`);
     else if (c.rows === 0) out.push(`Feed "${c.feed}" is empty for this organisation (module unused or no access).`);
+    if (!c.note && !c.unavailable && !c.last_error && c.age_minutes !== undefined && c.age_minutes > FRESHNESS_MINUTES)
+      out.push(`Feed "${c.feed}" was last synced ${ageText(c.age_minutes)} ago, older than its ${FRESHNESS_MINUTES}-minute freshness window; recent changes may be missing.`);
   }
   return out;
+}
+
+/** Default row cap for analytics tables that can grow with the organisation (people, credentials, flags). */
+export const DEFAULT_TABLE_LIMIT = 50;
+
+/**
+ * The first `limit` rows of an already-ranked list, plus the full count. Headline metrics must be
+ * computed on the full list before calling this; only the returned detail rows are cut.
+ */
+export function bounded<T>(rows: T[], limit: number = DEFAULT_TABLE_LIMIT): { rows: T[]; total: number; truncated: boolean } {
+  const n = Math.max(1, Math.floor(limit));
+  return { rows: rows.slice(0, n), total: rows.length, truncated: rows.length > n };
 }
 
 export function buildResult<Row>(args: {
@@ -43,7 +80,7 @@ export function buildResult<Row>(args: {
   caveats?: string[];
   now: Date;
 }): AnalyticResult<Row> {
-  const cov = coverage(args.cache, args.feeds);
+  const cov = coverage(args.cache, args.feeds, args.now);
   return {
     metric_version: args.version,
     period: args.period ? { from: args.period.from.toISOString(), to: args.period.to.toISOString(), label: args.period.label } : undefined,

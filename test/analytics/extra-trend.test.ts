@@ -40,6 +40,14 @@ describe("buckets", () => {
     const w = buckets(parsePeriod("2026-09-07..2026-09-13", NOW), "week")[0]!;
     expect(new Date(lastYear(w, "week").from).getUTCDay()).toBe(1); // still a Monday
   });
+  it("month-grain last year maps a leap day to Feb 28 instead of overflowing into March", () => {
+    const [feb] = buckets(parsePeriod("2024-02-29..2024-02-29", NOW), "month");
+    expect(feb).toMatchObject({ label: "2024-02", partial: true });
+    const ly = lastYear(feb!, "month");
+    expect(new Date(ly.from).toISOString()).toBe("2023-02-28T00:00:00.000Z");
+    expect(new Date(ly.to).toISOString()).toBe("2023-03-01T00:00:00.000Z");
+    expect(ly.to).toBeGreaterThan(ly.from);
+  });
   it("OLS slope", () => {
     expect(olsSlope([[0, 1], [1, 2], [2, 3]])).toBe(1);
     expect(olsSlope([[0, 5], [1, 5]])).toBe(0);

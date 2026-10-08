@@ -95,6 +95,52 @@ describe("cache sync", () => {
     expect(d[1]).toMatchObject({ rows: 1, unavailable: null });
   });
 
+  it("a 403 after earlier syncs keeps the rows but marks them incomplete and not freshly synced", async () => {
+    let refuse = false;
+    const api = new MockApi().on("GET /feed/sites", (req: Recorded) =>
+      refuse ? new Response(JSON.stringify({ message: "no permission" }), { status: 403 }) : pagedFeed("/feed/sites", [{ id: "site-1", name: "Demo Depot" }])(req),
+    );
+    const store = tempStore();
+    await syncFeed(client(api), store, "sites", { now: NOW });
+    refuse = true;
+    const r = await syncFeed(client(api), store, "sites", { now: () => new Date("2026-10-09T00:00:00.000Z") });
+    expect(r).toMatchObject({ complete: false });
+    expect(r.unavailable).toContain("HTTP 403");
+    expect(r.error).toMatch(/no longer current/);
+    const [s] = store.status(["sites"]);
+    expect(s).toMatchObject({ rows: 1, complete: false, last_synced_at: "2026-10-08T00:00:00.000Z" });
+    expect(s!.unavailable).toContain("no permission");
+    expect(s!.last_error).toMatch(/Access refused/);
+  });
+
+  it("a capped full refresh never mixes into a previous complete snapshot", async () => {
+    let served = [1, 2, 3, 4, 5].map((i) => inspection(i, "2026-09-01T00:00:00Z"));
+    const api = new MockApi().on("GET /feed/inspections", (req: Recorded) => pagedFeed("/feed/inspections", served, { pageSize: 10 })(req));
+    const store = tempStore();
+    await syncFeed(client(api), store, "inspections", { now: NOW });
+    // Upstream: rows 1-5 deleted, 30 new rows; the forced full refresh hits the 20-row cap.
+    served = Array.from({ length: 30 }, (_, i) => inspection(100 + i, "2026-09-10T00:00:00Z"));
+    const r = await syncFeed(client(api), store, "inspections", { now: () => new Date("2026-10-09T00:00:00.000Z"), full: true, maxRows: 20 });
+    expect(r).toMatchObject({ fetched: 20, upserted: 0, complete: false });
+    expect(r.error).toMatch(/20-row cap.*previous complete snapshot/);
+    const [s] = store.status(["inspections"]);
+    expect(s).toMatchObject({ rows: 5, complete: true, last_synced_at: "2026-10-08T00:00:00.000Z" });
+    expect(s!.last_error).toMatch(/previous complete snapshot from 2026-10-08/);
+    expect(store.rows<{ id: string }>("inspections").map((x) => x.id)).toEqual(["audit_0001", "audit_0002", "audit_0003", "audit_0004", "audit_0005"]);
+  });
+
+  it("a capped full pull over a previous partial snapshot replaces it instead of accumulating rows", async () => {
+    let served = Array.from({ length: 30 }, (_, i) => inspection(i, "2026-09-01T00:00:00Z"));
+    const api = new MockApi().on("GET /feed/inspections", (req: Recorded) => pagedFeed("/feed/inspections", served, { pageSize: 10 })(req));
+    const store = tempStore();
+    await syncFeed(client(api), store, "inspections", { now: NOW, maxRows: 20 });
+    served = Array.from({ length: 30 }, (_, i) => inspection(100 + i, "2026-09-10T00:00:00Z"));
+    const r = await syncFeed(client(api), store, "inspections", { now: NOW, maxRows: 20 });
+    expect(r).toMatchObject({ full: true, fetched: 20, complete: false });
+    expect(store.status(["inspections"])[0]).toMatchObject({ rows: 20, complete: false });
+    expect(store.rows<{ id: string }>("inspections").every((x) => x.id >= "audit_0100")).toBe(true);
+  });
+
   it("records other API errors as last_error and continues", async () => {
     const api = new MockApi()
       .on("GET /feed/users", () => new Response("bad", { status: 400 }))

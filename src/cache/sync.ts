@@ -14,7 +14,10 @@ const MIN_EXPECTED_PAGE = 20;
 export interface SyncOptions {
   /** Ignore the watermark and re-pull the whole feed. */
   full?: boolean;
-  /** Cap per feed (default 50,000). A capped pull is reported as complete: false. */
+  /**
+   * Cap per feed (default 50,000). A capped pull is reported as complete: false; a capped full pull
+   * never overwrites a previous complete snapshot (it is kept and flagged through last_error).
+   */
   maxRows?: number;
   now?: () => Date;
 }
@@ -95,8 +98,16 @@ async function runSync(client: ScClient, store: SqliteCache, def: FeedDef, opts:
     if (err instanceof ScApiError && (err.status === 403 || err.status === 404)) {
       const message = apiMessage(err);
       store.setUnavailable(def.name, message);
-      store.setState(def.name, { last_synced_at: now().toISOString(), complete: true, last_error: null });
-      return report({ complete: true, unavailable: message });
+      if (!prev?.rows) {
+        // Nothing cached: an empty, unavailable feed is the whole truth, so record the attempt.
+        store.setState(def.name, { last_synced_at: now().toISOString(), complete: true, last_error: null });
+        return report({ complete: true, unavailable: message });
+      }
+      // Access lost after earlier syncs: the cached rows are no longer current. Keep them (a refusal
+      // is not proof they were deleted) but never present them as a fresh, complete snapshot.
+      const lastError = `Access refused on refresh: ${message} Kept the ${prev.rows} rows cached at ${prev.last_synced_at ?? "an earlier sync"}; they are no longer current.`;
+      store.setState(def.name, { complete: false, last_error: lastError });
+      return report({ complete: false, unavailable: message, error: lastError });
     }
     const message = err instanceof Error ? err.message : String(err);
     store.setState(def.name, { last_error: message });
@@ -104,17 +115,27 @@ async function runSync(client: ScClient, store: SqliteCache, def: FeedDef, opts:
   }
 
   const { items, pages, truncated, stuck } = result;
+  const finished = !truncated && !stuck;
+  const stuckError = `The feed returned a repeating page cursor after ${pages} pages; sync stopped there.`;
+
+  // A full pull that stopped early (row cap or stuck cursor) must not be mixed into the previous
+  // snapshot: upstream deletions would survive next to a partial current set, over- or undercounting.
+  // Keep a previous complete snapshot untouched and say so; otherwise the newer partial replaces it.
+  if (!incremental && !finished && prev?.complete && prev.rows > 0) {
+    const why = stuck ? stuckError : `The full refresh hit the ${maxRows}-row cap.`;
+    const lastError = `${why} Kept the previous complete snapshot from ${prev.last_synced_at ?? "an earlier sync"}; rows changed or deleted since then are not reflected.`;
+    store.setUnavailable(def.name, null);
+    store.setState(def.name, { last_error: lastError });
+    return report({ fetched: items.length, upserted: 0, pages, complete: false, error: lastError });
+  }
+
   const watermark = maxTime(items, def.modifiedField, prev?.watermark ?? null);
-  const finishedFullPull = !incremental && !truncated && !stuck;
-  const upserted = finishedFullPull ? store.replace(def.name, items) : store.upsert(def.name, items);
-  const complete = !truncated && !stuck;
-  const lastError = stuck
-    ? `The feed returned a repeating page cursor after ${pages} pages; sync stopped there. Cached rows for this feed are partial.`
-    : null;
+  const upserted = incremental ? store.upsert(def.name, items) : store.replace(def.name, items);
+  const lastError = stuck ? `${stuckError} Cached rows for this feed are partial.` : null;
 
   store.setUnavailable(def.name, null);
-  store.setState(def.name, { last_synced_at: now().toISOString(), watermark, complete, last_error: lastError });
-  return report({ fetched: items.length, upserted, pages, complete, ...(lastError ? { error: lastError } : {}) });
+  store.setState(def.name, { last_synced_at: now().toISOString(), watermark, complete: finished, last_error: lastError });
+  return report({ fetched: items.length, upserted, pages, complete: finished, ...(lastError ? { error: lastError } : {}) });
 }
 
 /** Latest timestamp in `field` across rows, never earlier than `prev`. Returned as ISO 8601. */

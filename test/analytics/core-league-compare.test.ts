@@ -70,6 +70,40 @@ describe("analyzeSiteLeague", () => {
     ]);
   });
 
+  it("previous-period rank ignores open overdue actions, whose earlier state the cache cannot reconstruct", () => {
+    // Site A has an action that was overdue on 31 Aug but whose due date was later extended to November.
+    // Previous-period scores tie, so before the fix the current due date alone decided August's rank.
+    const fixture = (due: string) =>
+      new FakeCache()
+        .seed("inspections", [
+          insp("audit_a1", "site-a", "2026-09-02", 90),
+          insp("audit_b1", "site-b", "2026-09-02", 70),
+          insp("audit_pa1", "site-a", "2026-08-10", 80),
+          insp("audit_pb1", "site-b", "2026-08-10", 80),
+        ])
+        .seed("inspection_items", [])
+        .seed("actions", [{ id: "x9", status: "To Do", site_id: "site-a", created_at: "2026-08-01T00:00:00Z", due_date: due }])
+        .seed("sites", [
+          { id: "site-a", name: "Demo North" },
+          { id: "site-b", name: "Demo South" },
+        ]);
+    const run = (due: string) =>
+      analyzeSiteLeague(fixture(due), { period: "2026-09-01..2026-09-30", min_inspections: 1, metrics: ["average_score", "overdue_actions"] }, NOW).result;
+    const extended = run("2026-11-15T00:00:00Z");
+    const original = run("2026-08-15T00:00:00Z");
+    const ranks = (r: typeof extended) => r.table.map((x) => [x.site, x.previous_rank, x.rank_change]);
+    expect(ranks(original)).toEqual(ranks(extended));
+    expect(ranks(extended)).toEqual([
+      ["Demo North", 1, 0],
+      ["Demo South", 2, 0],
+    ]);
+    expect(extended.caveats.some((c) => c.includes("Previous-period rank leaves out open overdue actions"))).toBe(true);
+
+    const onlyOverdue = analyzeSiteLeague(fixture("2026-08-15T00:00:00Z"), { period: "2026-09-01..2026-09-30", min_inspections: 1, metrics: ["overdue_actions"] }, NOW).result;
+    expect(onlyOverdue.table.every((x) => x.previous_rank === null && x.rank_change === null)).toBe(true);
+    expect(onlyOverdue.caveats.some((c) => c.startsWith("No previous-period rank"))).toBe(true);
+  });
+
   it("uses only the chosen metrics", () => {
     const { result } = analyzeSiteLeague(leagueFixture(), { period: "2026-09-01..2026-09-30", min_inspections: 2, metrics: ["failed_item_rate"] }, NOW);
     expect(result.table.map((r) => [r.site, r.composite])).toEqual([

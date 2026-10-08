@@ -1,7 +1,7 @@
 import type { AnalyticResult, CacheReader } from "../cache/contract.js";
 import { ids } from "../core/params.js";
 import { parsePeriod } from "../core/time.js";
-import { bool, buildResult, nameMaps, str } from "./common.js";
+import { bool, bounded, buildResult, nameMaps, str } from "./common.js";
 import { canon, DAY } from "./failed-items.js";
 
 /**
@@ -26,6 +26,8 @@ export interface CredentialArgs {
   horizon?: string;
   credential_types?: string[];
   include_expired?: boolean;
+  /** Max rows in the detail table and in each rollup (default 50); metrics always cover everything. */
+  limit?: number;
 }
 
 export interface CredentialRow {
@@ -47,6 +49,10 @@ export function analyzeCredentialRadar(
 ): {
   summary: string;
   result: AnalyticResult<CredentialRow> & {
+    /** Credentials in the full (uncut) table; `table` holds the most urgent `limit` of them. */
+    total: number;
+    /** True when the table or either rollup was cut to `limit`. */
+    truncated: boolean;
     by_person: Array<{ person: string; user_id?: string; expired: number; within_7_days: number; within_30_days: number; within_90_days: number; total: number }>;
     by_type: Array<{ credential_type: string; expired: number; within_7_days: number; within_30_days: number; within_90_days: number; total: number }>;
   };
@@ -69,7 +75,7 @@ export function analyzeCredentialRadar(
       caveats: ["No credential data: the credentials feed is empty (module unused, no access, or not synced). This does not mean nothing is expiring."],
       now,
     });
-    return { summary: "No credential data: the credentials feed is empty, so expiries cannot be checked.", result: { ...result, by_person: [], by_type: [] } };
+    return { summary: "No credential data: the credentials feed is empty, so expiries cannot be checked.", result: { ...result, total: 0, truncated: false, by_person: [], by_type: [] } };
   }
 
   const users = nameMaps(cache).users;
@@ -195,6 +201,13 @@ export function analyzeCredentialRadar(
   if (pending) caveats.push(`${pending} listed credentials are not yet approved (approval_status other than APPROVED).`);
   if (!includeExpired && expiredHidden) caveats.push(`${expiredHidden} expired credentials are hidden (include_expired is false).`);
   caveats.push("Only people with a credential record appear; anyone missing a required credential entirely is not detected here.");
+  const shown = bounded(table, args.limit);
+  const people = bounded(byPerson, args.limit);
+  const types = bounded(byType, args.limit);
+  if (shown.truncated)
+    caveats.push(`Showing the ${shown.rows.length} most urgent credentials (fewest days left first) out of ${shown.total}; the counts and rollups cover all ${shown.total}. Raise limit or filter by credential type to see the rest.`);
+  if (people.truncated || types.truncated)
+    caveats.push(`Rollups list the first ${Math.max(people.rows.length, types.rows.length)} groups (most expired, then most due within 7 days); ${people.total} people and ${types.total} credential types in total.`);
 
   const result = buildResult({
     version: CREDENTIALS_VERSION,
@@ -202,13 +215,17 @@ export function analyzeCredentialRadar(
     filters,
     cache,
     feeds: [...feeds],
-    metrics: { ...counts, listed: table.length, beyond_horizon: beyond, no_expiry_date: noExpiry, people: byPerson.length },
-    table,
+    metrics: { ...counts, listed: table.length, beyond_horizon: beyond, no_expiry_date: noExpiry, people: byPerson.length, credential_types: byType.length },
+    table: shown.rows,
     method:
       "Days left = expiry date minus today's date (UTC). Expired = before today; buckets: 0-7, 8-30, 31-90 days. Only the latest-expiring credential per person and type counts; anything expiring on or after the horizon end is excluded.",
     caveats,
     now,
   });
   const summary = `${table.length} credentials need attention (${horizon.label}): ${counts.expired} expired, ${counts.within_7_days} within 7 days, ${counts.within_30_days} within 8-30 days, ${counts.within_90_days} within 31-90 days, across ${byPerson.length} people.`;
-  return { summary, result: { ...result, by_person: byPerson, by_type: byType } };
+  const listedNote = shown.truncated ? ` The ${shown.rows.length} most urgent are listed.` : "";
+  return {
+    summary: summary + listedNote,
+    result: { ...result, total: shown.total, truncated: shown.truncated || people.truncated || types.truncated, by_person: people.rows, by_type: types.rows },
+  };
 }

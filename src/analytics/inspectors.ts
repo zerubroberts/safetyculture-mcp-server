@@ -1,6 +1,6 @@
 import type { CacheReader } from "../cache/contract.js";
 import type { Period } from "../core/time.js";
-import { buildResult, groupBy, nameMaps } from "./common.js";
+import { bounded, buildResult, groupBy, nameMaps } from "./common.js";
 import { median, pct, round } from "./stats.js";
 import { completedInspections, itemCounts, itemsByInspection, userKey, type Insp, type ScopeFilter } from "./trend.js";
 
@@ -22,6 +22,8 @@ export function templateMedianDurations(insps: Insp[], min = MIN_TEMPLATE_DURATI
 
 export interface InspectorArgs extends ScopeFilter {
   period: Period;
+  /** Max inspector rows returned (default 50); metrics always cover every inspector. */
+  limit?: number;
 }
 
 export interface InspectorRow {
@@ -99,7 +101,15 @@ export function computeInspectorActivity(cache: CacheReader, args: InspectorArgs
       very_fast_share: pct(fast, eligible, 1),
     });
   }
-  table.sort((a, b) => b.inspections - a.inspections || a.inspector_name.localeCompare(b.inspector_name));
+  table.sort((a, b) => b.inspections - a.inspections || a.inspector_name.localeCompare(b.inspector_name) || a.inspector_id.localeCompare(b.inspector_id));
+  const shown = bounded(table, args.limit);
+  const caveats = [
+    "Inspection volume depends on role, roster and assigned sites; this is not a performance score.",
+    "A lower failed-item rate than expected can mean safer areas as easily as less thorough inspections; treat differences as prompts for a conversation.",
+    "Duration is the feed's duration field, read as seconds.",
+  ];
+  if (shown.truncated)
+    caveats.push(`Showing the ${shown.rows.length} inspectors with the most inspections out of ${shown.total}; metrics cover all ${shown.total}. Raise limit or filter by site or template to see the rest.`);
 
   const result = buildResult({
     version: "inspector-activity/1",
@@ -112,19 +122,18 @@ export function computeInspectorActivity(cache: CacheReader, args: InspectorArgs
       inspections: insps.length,
       templates_with_duration_baseline: medians.size,
     },
-    table,
+    table: shown.rows,
     method:
       `Inspector = inspection owner (owner_id). Failed-item rate = failed / answered items on their completed inspections. Expected rate = the organisation's failed-item rate per template, weighted by that inspector's answered items on each template, so people are compared on the same template mix. ` +
       `Very fast = duration under ${FAST_SHARE * 100}% of the template's median duration (only templates with >= ${MIN_TEMPLATE_DURATIONS} timed inspections).`,
-    caveats: [
-      "Inspection volume depends on role, roster and assigned sites; this is not a performance score.",
-      "A lower failed-item rate than expected can mean safer areas as easily as less thorough inspections; treat differences as prompts for a conversation.",
-      "Duration is the feed's duration field, read as seconds.",
-    ],
+    caveats,
     now,
   });
   return {
-    result,
-    summary: `${table.length} inspectors completed ${insps.length} inspections over ${args.period.label}. Descriptive activity only, not a performance score.`,
+    result: { ...result, total: shown.total, truncated: shown.truncated },
+    summary:
+      `${table.length} inspectors completed ${insps.length} inspections over ${args.period.label}` +
+      (shown.truncated ? ` (top ${shown.rows.length} by volume listed)` : "") +
+      ". Descriptive activity only, not a performance score.",
   };
 }
