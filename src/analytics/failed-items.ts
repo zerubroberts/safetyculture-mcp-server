@@ -82,27 +82,20 @@ export function completedInspections(cache: CacheReader, p: Period | undefined, 
   return out;
 }
 
-/** Item types that never carry a pass/fail answer, so they are not part of the failed-item rate denominator. */
-export const NON_ANSWER_TYPES = new Set([
-  "section",
-  "category",
-  "information",
-  "media",
-  "signature",
-  "drawing",
-  "text",
-  "textsingle",
-  "datetime",
-  "address",
-  "smartfield",
-  "dynamicfield",
-]);
+/**
+ * Item types that can carry a pass/fail answer: the failed-item rate denominator.
+ * Evidence (live org, 2026-10-08, ~17k inspection items across 19 types): is_failed_response was
+ * only ever true on "question" (multiple choice with a response set) and "list" items. Counting
+ * structural or free-text types (section, smartfield, table, asset, site...) would inflate the
+ * denominator and understate failure rates, so this is an allowlist, not a denylist.
+ */
+export const FAILABLE_TYPES = new Set(["question", "list"]);
 
-/** An item counts as answered when it is active, has a non-empty response and is not a structural/free-text type. */
+/** An item counts as answered when it is active, of a pass/fail-capable type, and has a non-empty response. */
 export function isAnswered(item: Record<string, unknown>): boolean {
   if (bool(item.inactive)) return false;
   const type = String(item.type ?? "").toLowerCase();
-  if (NON_ANSWER_TYPES.has(type)) return false;
+  if (!FAILABLE_TYPES.has(type)) return false;
   return (str(item.response) ?? "").trim() !== "";
 }
 
