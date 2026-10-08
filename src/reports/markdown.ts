@@ -1,4 +1,4 @@
-import { cellText, deltaText, fmt, safeHref, type Block, type Cell, type Report } from "./model.js";
+import { cellText, deltaText, edgePartial, fmt, partialNote, safeHref, type Block, type Cell, type Report } from "./model.js";
 
 /** Markdown twin of the HTML report. User text is escaped so it cannot inject HTML or table syntax. */
 
@@ -26,8 +26,9 @@ function blockMd(b: Block): string {
     case "chart": {
       const c = b.chart;
       const head = c.kind === "pareto" ? `| ${mdEsc(c.xLabel)} | ${mdEsc(c.yLabel)} | Cumulative share |\n|---|---:|---:|` : `| ${mdEsc(c.xLabel)} | ${mdEsc(c.yLabel)} |\n|---|---:|`;
-      const rows = c.points.map((p, i) => `| ${mdEsc(p.label)} | ${mdEsc(fmt(p.value, c.unit ?? ""))} |${c.kind === "pareto" ? ` ${mdEsc(fmt(c.cumulative?.[i] ?? null, "%"))} |` : ""}`);
-      return `*${mdEsc(c.title)}*\n\n${head}\n${rows.join("\n")}`;
+      const rows = c.points.map((p, i) => `| ${mdEsc(p.partial ? `${p.label} \u2020` : p.label)} | ${mdEsc(fmt(p.value, c.unit ?? ""))} |${c.kind === "pareto" ? ` ${mdEsc(fmt(c.cumulative?.[i] ?? null, "%"))} |` : ""}`);
+      const note = edgePartial(c.points) ? `\n\n_${mdEsc(partialNote(c.xLabel))}_` : "";
+      return `*${mdEsc(c.title)}*\n\n${head}\n${rows.join("\n")}${note}`;
     }
     case "table":
       if (!b.rows.length) return `_${mdEsc(b.empty ?? "Nothing to show.")}_`;

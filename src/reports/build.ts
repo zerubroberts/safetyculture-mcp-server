@@ -7,6 +7,7 @@ import { computeTrend, siteKey, type Grain, type TrendMetric } from "../analytic
 import { computeHotspots } from "../analytics/hotspots.js";
 import { computeInspectorActivity } from "../analytics/inspectors.js";
 import type { Block, Cell, Chart, Report, Section } from "./model.js";
+import { fmtInstant } from "./model.js";
 import { backlogSummary, coverageTable, orgFingerprint, overdueActions, pulseSections, scheduleSummary, siteNameMap, topFailedItems } from "./sections.js";
 
 /**
@@ -26,7 +27,9 @@ export interface Built {
   metrics: Record<string, number | string | null>;
 }
 
-const stamp = (now: Date) => `${now.toISOString().slice(0, 16).replace("T", " ")} UTC`;
+const stamp = (now: Date) => fmtInstant(now);
+/** Order-preserving dedupe so a caveat shared by two analytics prints once. */
+const unique = (xs: string[]): string[] => [...new Set(xs)];
 const pctText = (v: number | null | undefined) => (v === null || v === undefined ? null : `${v}%`);
 
 function trendChart(cache: CacheReader, metric: TrendMetric, grain: Grain, period: Period, siteIds: string[] | undefined, now: Date, kind: Chart["kind"], title: string, yLabel: string): Chart {
@@ -39,7 +42,7 @@ function trendChart(cache: CacheReader, metric: TrendMetric, grain: Grain, perio
     yLabel,
     unit,
     yMax: unit === "%" ? 100 : undefined,
-    points: t.table.map((r) => ({ label: r.bucket, value: r.value })),
+    points: t.table.map((r) => ({ label: r.bucket, value: r.value, partial: r.partial })),
   };
 }
 
@@ -78,13 +81,17 @@ function failedItemsBlocks(cache: CacheReader, period: string, siteIds: string[]
 
 function coverageSection(cache: CacheReader, feeds: FeedName[], now: Date, methods: string[]): Section {
   const cov = coverage(cache, feeds);
+  const caveats = unique(coverageCaveats(cov));
+  // Method bullets arrive from several analytics that share wording (e.g. the pulse repeats the
+  // "Lower issue counts" line already in COMMON_METHODS); print each bullet once.
+  const methodItems = unique(methods).filter((m) => !caveats.includes(m));
   return {
     title: "Data coverage",
-    intro: `As of ${now.toISOString()}. Every figure is computed from these cached feeds; a feed that is missing or partial makes related figures missing or understated, not zero.`,
+    intro: `As of ${fmtInstant(now)}. Every figure is computed from these cached feeds; a feed that is missing or partial makes related figures missing or understated, not zero.`,
     blocks: [
       { kind: "table", columns: [{ label: "Feed" }, { label: "Rows", align: "right" }, { label: "Last synced" }, { label: "Coverage" }], rows: coverageTable(cache, feeds) },
-      { kind: "notes", title: "Caveats", items: coverageCaveats(cov) },
-      { kind: "notes", title: "Method", items: methods },
+      { kind: "notes", title: "Caveats", items: caveats },
+      { kind: "notes", title: "Method", items: methodItems },
     ],
   };
 }

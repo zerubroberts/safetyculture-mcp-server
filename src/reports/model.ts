@@ -27,6 +27,8 @@ export interface Tile {
 export interface ChartPoint {
   label: string;
   value: number | null;
+  /** True when a calendar bucket is cut short by the period edges (covers fewer days). */
+  partial?: boolean;
 }
 
 export interface Chart {
@@ -68,6 +70,28 @@ export interface Report {
 /** Only links into the Mitti web app are rendered; anything else becomes plain text. */
 export const SAFE_LINK = /^https:\/\/app\.safetyculture\.com\/[A-Za-z0-9/_\-.?=&%]*$/;
 export const safeHref = (href?: string) => (href && SAFE_LINK.test(href) ? href : undefined);
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** Human timestamp for report headers and coverage tables: "8 Oct 2026, 03:00 UTC". Unparseable input passes through. */
+export function fmtInstant(input: Date | string): string {
+  const d = input instanceof Date ? input : new Date(String(input));
+  if (Number.isNaN(d.getTime())) return String(input);
+  const p2 = (n: number) => String(n).padStart(2, "0");
+  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}, ${p2(d.getUTCHours())}:${p2(d.getUTCMinutes())} UTC`;
+}
+
+/** True when the first or last point only partly overlaps the period. */
+export function edgePartial(points: Array<{ partial?: boolean }>): boolean {
+  return points.length > 0 && (points[0]?.partial === true || points[points.length - 1]?.partial === true);
+}
+
+const partialWord = (xLabel: string): string => (/week/i.test(xLabel) ? "week" : /month/i.test(xLabel) ? "month" : "bucket");
+
+/** Footnote for charts with partial edge buckets. Weekly charts always carry the words "partial week". */
+export function partialNote(xLabel: string): string {
+  return `\u2020 partial ${partialWord(xLabel)}: the first or last bucket covers fewer days, so its count reads lower for that reason alone.`;
+}
 
 /** Deterministic number formatting: thousands separators, fixed decimals as computed. */
 export function fmt(v: number | null | undefined, unit = ""): string {
