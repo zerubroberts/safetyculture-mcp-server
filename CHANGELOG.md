@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 (unreleased)
+## 0.1.0 (2026-10-08)
 Complete rewrite of the 2025 Python prototype (6 tools) as a TypeScript MCP server.
 
 ### Added

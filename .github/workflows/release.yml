@@ -10,6 +10,8 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -21,12 +23,13 @@ jobs:
       - run: npx tsup
       - run: npx vitest run
       - run: node scripts/scan-secrets.mjs
-      - run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - name: Build the Claude Desktop extension
         run: npm run build:mcpb
-      - name: Attach the extension to the GitHub release
+      - name: Create the GitHub release with the extension attached
         run: gh release create "$GITHUB_REF_NAME" safetyculture-mcp.mcpb --title "$GITHUB_REF_NAME" --notes "See CHANGELOG.md" || gh release upload "$GITHUB_REF_NAME" safetyculture-mcp.mcpb --clobber
         env:
           GH_TOKEN: ${{ github.token }}
+      # npm publishing runs only once the NPM_TOKEN repository secret exists.
+      - name: Publish to npm
+        if: env.NODE_AUTH_TOKEN != ''
+        run: npm publish --provenance --access public
