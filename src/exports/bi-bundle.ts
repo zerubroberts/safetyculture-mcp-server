@@ -5,7 +5,6 @@ import type { PiiLevel } from "../core/config.js";
 import { inPeriod, type Period } from "../core/time.js";
 import { VERSION } from "../version.js";
 import { writeCsv } from "./csv.js";
-import { personEmail, personName } from "./pii.js";
 
 /**
  * Star-schema export of the local cache for Power BI, Qlik Sense and Excel.
@@ -266,7 +265,7 @@ const formatDate = (d: Date) => `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1
 const dateKeyOf = (d: Date) => d.getUTCFullYear() * 10000 + (d.getUTCMonth() + 1) * 100 + d.getUTCDate();
 
 /** Coerces a raw value to the column type's cell value ("" for missing / unparseable). */
-function coerce(value: unknown, type: ColType): string | number {
+function coerce(value: unknown, type: ColType): string | number | object {
   if (value === undefined || value === null || value === "") return "";
   switch (type) {
     case "int":
@@ -286,7 +285,9 @@ function coerce(value: unknown, type: ColType): string | number {
       return d ? formatDate(d) : "";
     }
     default:
-      return typeof value === "object" ? JSON.stringify(value) : String(value);
+      // Nested values stay structured so the writer's privacy policy walks them before they become
+      // JSON text (masking JSON text directly can miss a phone number right after an escape like \n).
+      return typeof value === "object" ? value : String(value);
   }
 }
 
@@ -313,7 +314,10 @@ export interface Manifest {
   coverage: Array<{ feed: FeedName; rows: number; last_synced_at: string | null; complete: boolean }>;
 }
 
-/** Builds the bundle rows from cached feeds (pure: no file I/O). */
+/**
+ * Builds the bundle rows from cached feeds (pure: no file I/O). Rows are NOT privacy-masked: they
+ * must only leave the process through writeCsv / writeJsonl, which apply the policy to every cell.
+ */
 export function buildBundleTables(cache: CacheReader, opts: { pii: PiiLevel; now: Date; period?: Period }): Record<string, Row[]> {
   const inPer = (d: Date | undefined) => !opts.period || (d !== undefined && inPeriod(d.toISOString(), opts.period));
 
@@ -490,8 +494,10 @@ export function buildBundleTables(cache: CacheReader, opts: { pii: PiiLevel; now
     .filter((u) => str(u.id))
     .map((u) => ({
       user_id: String(u.id),
-      user_name: personName([str(u.firstname), str(u.lastname)].filter(Boolean).join(" ") || undefined, opts.pii),
-      user_email: personEmail(str(u.email), opts.pii),
+      // Raw here: the CSV writer applies the privacy policy to every cell of the bundle (user_email
+      // pseudonymised at contact and strict, user_name at strict).
+      user_name: [str(u.firstname), str(u.lastname)].filter(Boolean).join(" ") || undefined,
+      user_email: str(u.email),
       user_is_active: u.active === true,
       user_seat_type: u.seat_type,
       user_last_seen_at: u.last_seen_at,
@@ -561,7 +567,7 @@ export function dateDimension(dateKeys: number[]): Row[] {
 }
 
 /** Writes the bundle folder: CSVs, manifest.json, Power Query M, Qlik load script, README. */
-export function writeBiBundle(cache: CacheReader, opts: { dir: string; pii: PiiLevel; now: Date; period?: Period }): BundleResult {
+export function writeBiBundle(cache: CacheReader, opts: { dir: string; pii: PiiLevel; now: Date; period?: Period; key?: Buffer }): BundleResult {
   mkdirSync(opts.dir, { recursive: true });
   const raw = buildBundleTables(cache, opts);
   const files: string[] = [];
@@ -569,7 +575,7 @@ export function writeBiBundle(cache: CacheReader, opts: { dir: string; pii: PiiL
   for (const spec of TABLES) {
     const rows = shape(spec, raw[spec.name] ?? []);
     const file = `${spec.name}.csv`;
-    const written = writeCsv(join(opts.dir, file), rows, spec.columns.map((col) => col.name));
+    const written = writeCsv(join(opts.dir, file), rows, { pii: opts.pii, key: opts.key }, spec.columns.map((col) => col.name));
     files.push(file);
     tables.push({ name: spec.name, file, kind: spec.kind, grain: spec.grain, primary_key: spec.primary_key, rows: written, columns: spec.columns });
   }
@@ -585,6 +591,8 @@ export function writeBiBundle(cache: CacheReader, opts: { dir: string; pii: PiiL
       date_key: "Integer YYYYMMDD (UTC calendar day) joining facts to dim_date",
       flags: "Integer 1 = yes, 0 = no",
       text_safety: "Text starting with = + - @ TAB or CR is prefixed with an apostrophe to stop spreadsheet formulas",
+      privacy:
+        "Every text cell follows the privacy level: token-like text is always redacted; at contact and strict, emails become pseudonyms and phone numbers are masked in every column; at strict, user_name is pseudonymised too",
       empty: "Empty cell = no value in the source",
     },
     tables,
@@ -697,7 +705,7 @@ function readme(m: Manifest): string {
   return `# Mitti (SafetyCulture) BI bundle
 
 Exported by ${m.generator} at ${m.as_of} (UTC).${m.period ? ` Facts filtered to ${m.period.label}.` : " All cached records."}
-Privacy level: \`${m.pii}\` (dim_users names/emails pseudonymised accordingly).
+Privacy level: \`${m.pii}\` (applied to every text cell of every table, see Conventions).
 
 ## Tables
 

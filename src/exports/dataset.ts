@@ -3,7 +3,7 @@ import type { PiiLevel } from "../core/config.js";
 import { ToolError } from "../core/errors.js";
 import { inPeriod, type Period } from "../core/time.js";
 import { columnsOf, writeCsv, writeJsonl } from "./csv.js";
-import { applyPii } from "./pii.js";
+import { isStrippedColumn } from "./pii.js";
 
 export interface DatasetFilter {
   period?: Period;
@@ -42,17 +42,21 @@ export function writeDataset(args: {
   format: "csv" | "jsonl";
   rows: Record<string, unknown>[];
   pii: PiiLevel;
+  /** Pseudonym key (HTTP: per request); defaults to the process key. */
+  key?: Buffer;
   columns?: string[];
 }): { path: string; rows: number; columns: string[] } {
-  const clean = args.rows.map((r) => applyPii(r, args.pii));
-  let columns = columnsOf(clean);
+  // The writers apply the privacy policy to every row; rows are passed to them unmasked so the
+  // policy runs exactly once (pseudonymising a pseudonym would break joins with tool output).
+  let columns = columnsOf(args.rows).filter((c) => !isStrippedColumn(c));
   if (args.columns?.length) {
     const unknown = args.columns.filter((c) => !columns.includes(c));
-    if (unknown.length && clean.length) throw new ToolError(`Unknown column(s): ${unknown.join(", ")}. Available: ${columns.slice(0, 60).join(", ")}.`);
+    if (unknown.length && args.rows.length) throw new ToolError(`Unknown column(s): ${unknown.join(", ")}. Available: ${columns.slice(0, 60).join(", ")}.`);
     columns = args.columns;
   }
+  const policy = { pii: args.pii, key: args.key };
   const path = join(args.dir, `${args.stem}.${args.format}`);
-  if (args.format === "csv") writeCsv(path, clean, columns);
-  else writeJsonl(path, args.columns?.length ? clean.map((r) => Object.fromEntries(columns.map((c) => [c, r[c]]))) : clean);
-  return { path, rows: clean.length, columns };
+  if (args.format === "csv") writeCsv(path, args.rows, policy, columns);
+  else writeJsonl(path, args.columns?.length ? args.rows.map((r) => Object.fromEntries(columns.map((c) => [c, r[c]]))) : args.rows, policy);
+  return { path, rows: args.rows.length, columns };
 }

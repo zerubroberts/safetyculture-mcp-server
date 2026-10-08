@@ -30,11 +30,36 @@ const FORBIDDEN: Array<[RegExp, string]> = [
   [/\bload_extension\b/i, "load_extension()"],
 ];
 
+// Checked against the raw text as well (lower-cased, comments removed, quotes KEPT): SQLite lets a
+// quoted identifier name a table-valued function, so "pragma_database_list", [pragma_table_list]
+// and `pragma_...` all run. These names have no business in a cache query, even inside a string
+// literal, so a false positive on a literal is an accepted cost.
+const FORBIDDEN_RAW: Array<[RegExp, string]> = [
+  [/\bpragma/, "PRAGMA (including pragma_ table functions, quoted or not)"],
+  [/\battach\b/, "ATTACH"],
+  [/\bload_extension\b/, "load_extension()"],
+  [/\breadfile\b/, "readfile()"],
+  [/\bwritefile\b/, "writefile()"],
+  [/\bfsdir\b/, "fsdir()"],
+  [/\bzipfile\b/, "zipfile()"],
+  [/\bfts3_tokenizer\b/, "fts3_tokenizer()"],
+];
+
 /**
  * Removes comments and the contents of string literals and quoted identifiers, so keyword and
  * semicolon checks only see SQL structure (a value like 'drop; table' is harmless data).
  */
 export function sqlStructure(sql: string): string {
+  return scanSql(sql, false);
+}
+
+/** Removes comments only: string literals and quoted identifiers are kept verbatim. */
+export function sqlWithoutComments(sql: string): string {
+  return scanSql(sql, true);
+}
+
+// One tokenizer for both views, so they can never disagree about where a comment or quote is.
+function scanSql(sql: string, keepQuoted: boolean): string {
   let out = "";
   let i = 0;
   while (i < sql.length) {
@@ -63,7 +88,7 @@ export function sqlStructure(sql: string): string {
         }
         j++;
       }
-      out += c === "'" ? "''" : "x";
+      out += keepQuoted ? sql.slice(i, j + 1) : c === "'" ? "''" : "x";
       i = j + 1;
     } else {
       out += c;
@@ -81,8 +106,11 @@ export function guardQuery(sql: string): string {
   const structure = sqlStructure(trimmed);
   if (structure.includes(";")) throw new ToolError("Only one statement is allowed: remove the extra ';'.");
   if (!/^\s*(select|with)\b/i.test(structure)) throw new ToolError("Only read-only SELECT (or WITH ... SELECT) queries are allowed.");
+  const raw = sqlWithoutComments(trimmed).toLowerCase();
   for (const [re, name] of FORBIDDEN)
     if (re.test(structure)) throw new ToolError(`${name} is not allowed in sc_query_cache: the cache is queried read-only, one SELECT at a time.`);
+  for (const [re, name] of FORBIDDEN_RAW)
+    if (re.test(raw)) throw new ToolError(`${name} is not allowed in sc_query_cache (also rejected inside quotes and string literals).`);
   return trimmed;
 }
 
@@ -90,13 +118,22 @@ export interface QueryResult {
   columns: string[];
   rows: Record<string, unknown>[];
   truncated: boolean;
+  /** Why rows were cut: the row cap, or the result-size budget (QUERY_MAX_BYTES). */
+  truncated_reason?: "rows" | "bytes";
   duration_ms: number;
 }
 
+/** V8 heap cap of the query child: a hostile query exhausts the child, never the server. */
+export const QUERY_CHILD_HEAP_MB = 256;
+// Room for the JSON envelope around the rows (ok flag, columns, brackets).
+const ENVELOPE_RESERVE = 64 * 1024;
+
 // Runs in a short-lived child process so a runaway query can be killed at the time cap (node:sqlite
 // has no interrupt, and a worker thread cannot be stopped mid-statement). The connection is
-// read-only and the query is wrapped so at most rowCap + 1 rows are read. Input arrives on stdin,
-// the result leaves as one JSON line on stdout.
+// read-only and the query is wrapped so at most rowCap + 1 rows are read. Rows are streamed with
+// iterate() against a running byte budget, so the child never holds more than ~maxBytes of
+// serialised rows; its heap is capped too (--max-old-space-size). Input arrives on stdin, the
+// result leaves as one JSON line on stdout.
 const CHILD_SOURCE = `
 const original = process.emitWarning;
 process.emitWarning = function (w, t, ...rest) {
@@ -116,33 +153,83 @@ process.stdin.on("end", () => {
     const job = JSON.parse(input);
     db = new DatabaseSync(job.path, { readOnly: true, timeout: 2000 });
     const stmt = db.prepare("SELECT * FROM (" + job.sql + "\\n) LIMIT " + (job.rowCap + 1));
-    const rows = stmt.all().map((r) => Object.assign({}, r));
+    const replacer = (k, v) => (typeof v === "bigint" ? v.toString() : v);
     // StatementSync.columns() only exists on newer Node versions.
-    const columns = typeof stmt.columns === "function" ? stmt.columns().map((c) => c.name) : rows[0] ? Object.keys(rows[0]) : [];
-    out = { ok: true, columns, rows };
+    let columns = typeof stmt.columns === "function" ? stmt.columns().map((c) => c.name) : null;
+    let budget = job.maxBytes - (columns ? JSON.stringify(columns).length : 0);
+    // Cheap lower bound of a row's JSON size, checked BEFORE serialising it, so one enormous value
+    // is rejected without building an even larger JSON string from it.
+    const minSize = (r) => {
+      let n = 2;
+      for (const k in r) {
+        const v = r[k];
+        n += k.length + 4;
+        if (typeof v === "string") n += v.length;
+        else if (v instanceof Uint8Array) n += v.byteLength * 6;
+        else n += 4;
+      }
+      return n;
+    };
+    const parts = [];
+    let reason = null;
+    let tooLarge = false;
+    for (const r of stmt.iterate()) {
+      if (parts.length >= job.rowCap) {
+        reason = "rows";
+        break;
+      }
+      const fits = minSize(r) <= budget;
+      const text = fits ? JSON.stringify(Object.assign({}, r), replacer) : "";
+      if (!fits || text.length + 1 > budget) {
+        reason = "bytes";
+        tooLarge = parts.length === 0;
+        break;
+      }
+      budget -= text.length + 1;
+      parts.push(text);
+      if (!columns) columns = Object.keys(r);
+    }
+    out = tooLarge
+      ? JSON.stringify({ ok: false, code: "row_too_large" })
+      : '{"ok":true,"truncated_reason":' + JSON.stringify(reason) + ',"columns":' + JSON.stringify(columns || []) + ',"rows":[' + parts.join(",") + "]}";
   } catch (err) {
-    out = { ok: false, error: err && err.message ? err.message : String(err) };
+    out = JSON.stringify({ ok: false, error: err && err.message ? err.message : String(err) });
   } finally {
     if (db) db.close();
   }
-  process.stdout.write(JSON.stringify(out, (k, v) => (typeof v === "bigint" ? v.toString() : v)));
+  process.stdout.write(out);
 });
 `;
 
-// The child needs no credentials: drop anything secret-looking from its environment.
-const childEnv = () => Object.fromEntries(Object.entries(process.env).filter(([k]) => !/token|secret|key|password|webhook/i.test(k)));
+// The child needs no credentials: drop anything secret-looking from its environment. NODE_OPTIONS
+// is dropped too so it cannot lift the heap cap, preload modules or open an inspector port.
+const childEnv = () =>
+  Object.fromEntries(Object.entries(process.env).filter(([k]) => !/token|secret|key|password|webhook/i.test(k) && !/^node_options$/i.test(k)));
+
+// How the child dies when a value cannot fit its memory: V8 heap exhaustion, or (for values past
+// V8's maximum string length) a fatal CHECK inside node:sqlite.
+const OOM = /heap out of memory|reached heap limit|allocation failed|fatal error|check failed/i;
 
 export function runReadOnlyQuery(
   path: string,
   sql: string,
   opts: { rowCap?: number; timeoutMs?: number } = {},
 ): Promise<QueryResult> {
-  const safe = guardQuery(sql);
+  let safe: string;
+  try {
+    safe = guardQuery(sql);
+  } catch (err) {
+    return Promise.reject(err);
+  }
   const rowCap = Math.min(QUERY_ROW_CAP, Math.max(1, opts.rowCap ?? QUERY_ROW_CAP));
   const timeoutMs = opts.timeoutMs ?? QUERY_TIMEOUT_MS;
   const started = Date.now();
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, ["-e", CHILD_SOURCE], { stdio: ["pipe", "pipe", "pipe"], env: childEnv(), windowsHide: true });
+    const child = spawn(process.execPath, [`--max-old-space-size=${QUERY_CHILD_HEAP_MB}`, "-e", CHILD_SOURCE], {
+      stdio: ["pipe", "pipe", "pipe"],
+      env: childEnv(),
+      windowsHide: true,
+    });
     let stdout = "";
     let stderr = "";
     let settled = false;
@@ -159,26 +246,40 @@ export function runReadOnlyQuery(
     );
     child.stdout.setEncoding("utf8").on("data", (c: string) => {
       stdout += c;
-      // Rows are capped by count in the child; this caps total bytes so one huge row cannot
-      // exhaust the server's memory.
+      // The child stops at its byte budget; this second cap protects the server if it ever does not.
       if (stdout.length > QUERY_MAX_BYTES)
         finish(() => reject(new ToolError(`Query result is larger than ${QUERY_MAX_BYTES / 1_000_000} MB. Select fewer or shorter columns, or aggregate in SQL.`)));
     });
-    child.stderr.setEncoding("utf8").on("data", (c: string) => (stderr += c.slice(0, 2000)));
+    child.stderr.setEncoding("utf8").on("data", (c: string) => {
+      if (stderr.length < 8_000) stderr += c.slice(0, 2000);
+    });
     child.on("error", (err) => finish(() => reject(new ToolError(`Could not start the query process: ${err.message}`))));
     child.on("close", () =>
       finish(() => {
-        let msg: { ok: boolean; error?: string; columns?: string[]; rows?: Record<string, unknown>[] };
+        let msg: { ok: boolean; error?: string; code?: string; columns?: string[]; rows?: Record<string, unknown>[]; truncated_reason?: "rows" | "bytes" | null };
         try {
           msg = JSON.parse(stdout);
         } catch {
+          if (OOM.test(stderr))
+            return reject(
+              new ToolError(`Query stopped: a value did not fit the query process's ${QUERY_CHILD_HEAP_MB} MB memory limit. Select fewer or shorter values (substr()), or aggregate in SQL.`),
+            );
           return reject(new ToolError(`Query process failed${stderr ? `: ${stderr.trim().split("\n").at(-1)}` : "."}`));
         }
+        if (msg.code === "row_too_large")
+          return reject(new ToolError(`A single result row is larger than the ${QUERY_MAX_BYTES / 1_000_000} MB result limit. Select fewer or shorter columns (substr()), or aggregate in SQL.`));
         if (!msg.ok) return reject(new ToolError(`SQLite rejected the query: ${msg.error}`));
         const rows = msg.rows ?? [];
-        resolve({ columns: msg.columns ?? [], rows: rows.slice(0, rowCap), truncated: rows.length > rowCap, duration_ms: Date.now() - started });
+        const reason = msg.truncated_reason ?? (rows.length > rowCap ? "rows" : undefined);
+        resolve({
+          columns: msg.columns ?? [],
+          rows: rows.slice(0, rowCap),
+          truncated: reason !== undefined,
+          ...(reason ? { truncated_reason: reason } : {}),
+          duration_ms: Date.now() - started,
+        });
       }),
     );
-    child.stdin.end(JSON.stringify({ path, sql: safe, rowCap }));
+    child.stdin.end(JSON.stringify({ path, sql: safe, rowCap, maxBytes: QUERY_MAX_BYTES - ENVELOPE_RESERVE }));
   });
 }
