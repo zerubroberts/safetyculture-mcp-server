@@ -1,6 +1,6 @@
-import type { CacheReader } from "../cache/contract.js";
+import type { CacheReader, FeedName } from "../cache/contract.js";
 import { addMonths, type Period } from "../core/time.js";
-import { bool, buildResult, num, str } from "./common.js";
+import { bool, buildResult, feedProblem, num, str, unavailableSentence } from "./common.js";
 import { FAILABLE_TYPES, canon, isAnswered as coreIsAnswered, isFailed as coreIsFailed, normLabel as coreNormLabel } from "./failed-items.js";
 import { isResolved, normPriority, normStatus, toAction } from "./backlog.js";
 import { mean, pct, round } from "./stats.js";
@@ -360,6 +360,29 @@ export function measurer(cache: CacheReader, metric: TrendMetric, scope: ScopeFi
 export function computeTrend(cache: CacheReader, args: TrendArgs, now: Date) {
   const { metric, grain, period } = args;
   const scope = { site_ids: args.site_ids, template_ids: args.template_ids };
+  const feeds: FeedName[] =
+    metric === "issues_created" ? ["issues"] : metric.startsWith("actions") ? ["actions"] : metric === "failed_item_rate" ? ["inspections", "inspection_items"] : ["inspections"];
+  const unit = metric === "average_score" || metric === "failed_item_rate" ? "%" : "";
+  const filters = { metric, grain, site_ids: args.site_ids, template_ids: args.template_ids };
+
+  // The metric's feed cannot be read: no buckets, no trend (empty buckets would read as zeros).
+  const sourceFeed: FeedName | undefined = metric === "issues_created" ? "issues" : metric.startsWith("actions") ? "actions" : metric === "failed_item_rate" ? "inspection_items" : undefined;
+  const problem = sourceFeed ? feedProblem(cache, sourceFeed) : null;
+  if (problem) {
+    const result = buildResult<TrendRow>({
+      version: "trend/1",
+      period,
+      filters,
+      cache,
+      feeds,
+      metrics: { buckets: null, fitted_buckets: null, slope_per_bucket: null, direction: null, mean_value: null, total: null, unit: unit || "count" },
+      table: [],
+      method: `${METHOD[metric]} The source feed could not be read, so no buckets are computed.`,
+      caveats: [`No ${LABEL[metric].toLowerCase()} figures: ${problem}. This is not a flat or zero trend.`],
+      now,
+    });
+    return { result, summary: unavailableSentence(`${LABEL[metric]} figures`, problem) };
+  }
   const m = measurer(cache, metric, scope);
   const bs = buckets(period, grain);
   const table: TrendRow[] = bs.map((b) => {
@@ -395,7 +418,6 @@ export function computeTrend(cache: CacheReader, args: TrendArgs, now: Date) {
   }
   const values = table.filter((r) => r.value !== null).map((r) => r.value as number);
   const total = COUNT_METRICS.has(metric) ? values.reduce((a, b) => a + b, 0) : null;
-  const unit = metric === "average_score" || metric === "failed_item_rate" ? "%" : "";
 
   const caveats: string[] = [];
   if (table.some((r) => r.partial)) caveats.push(`The first and/or last ${grain} only partly overlaps the period; counts there cover fewer days and are excluded from the slope.`);
@@ -403,14 +425,12 @@ export function computeTrend(cache: CacheReader, args: TrendArgs, now: Date) {
   if (metric === "issues_created") caveats.push("Lower issue counts can mean less reporting, not fewer hazards.");
   if (metric === "failed_item_rate") caveats.push("Failed-item rate counts every answered item equally, whatever its importance.");
 
-  const feeds =
-    metric === "issues_created" ? (["issues"] as const) : metric.startsWith("actions") ? (["actions"] as const) : metric === "failed_item_rate" ? (["inspections", "inspection_items"] as const) : (["inspections"] as const);
   const result = buildResult({
     version: "trend/1",
     period,
-    filters: { metric, grain, site_ids: args.site_ids, template_ids: args.template_ids },
+    filters,
     cache,
-    feeds: [...feeds],
+    feeds,
     metrics: {
       buckets: table.length,
       fitted_buckets: fitted.length,

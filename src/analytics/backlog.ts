@@ -1,8 +1,8 @@
-import type { AnalyticResult, CacheReader } from "../cache/contract.js";
+import type { AnalyticResult, CacheReader, FeedName } from "../cache/contract.js";
 import { links } from "../core/params.js";
 import { parsePeriod, type Period } from "../core/time.js";
 import { ACTION_PRIORITY, ACTION_STATUS } from "../toolsets/actions.js";
-import { buildResult, nameMaps, str } from "./common.js";
+import { buildResult, feedProblem, nameMaps, str, unavailableSentence } from "./common.js";
 import { canon, DAY, idIn } from "./failed-items.js";
 import { median, quantile, round } from "./stats.js";
 
@@ -148,6 +148,25 @@ export const wholeDays = (fromMs: number, toMs: number) => Math.floor((toMs - fr
 
 export const BACKLOG_VERSION = "action-backlog/1";
 
+const BACKLOG_METRICS = [
+  "open",
+  "overdue",
+  "open_no_due_date",
+  "age_0_7",
+  "age_8_30",
+  "age_31_90",
+  "age_90_plus",
+  "overdue_0_7",
+  "overdue_8_30",
+  "overdue_31_90",
+  "overdue_90_plus",
+  "completed_in_period",
+  "median_resolution_days",
+  "p90_resolution_days",
+  "opened_in_period",
+  "closed_in_period",
+] as const;
+
 export interface BacklogArgs {
   site_ids?: string[];
   priority?: Array<"high" | "medium" | "low" | "none">;
@@ -185,6 +204,26 @@ export function analyzeActionBacklog(
   const period = parsePeriod(args.period, now, "last 90 days");
   const groupBy = args.group_by ?? "site";
   const t = now.getTime();
+  const feeds: FeedName[] = groupBy === "assignee" ? ["actions", "action_assignees"] : ["actions"];
+  const filters = { site_ids: args.site_ids, priority: args.priority, group_by: groupBy, overdue_only: args.overdue_only || undefined };
+
+  // An unreadable actions feed is missing data, not an empty backlog: every figure is null.
+  const problem = feedProblem(cache, "actions");
+  if (problem) {
+    const result = buildResult<BacklogRow>({
+      version: BACKLOG_VERSION,
+      period,
+      filters,
+      cache,
+      feeds,
+      metrics: Object.fromEntries(BACKLOG_METRICS.map((k) => [k, null])),
+      table: [],
+      method: "The action backlog needs the actions feed; it could not be read, so no figures are computed.",
+      caveats: [`No action figures: ${problem}. This is not an empty backlog.`],
+      now,
+    });
+    return { summary: unavailableSentence("Action figures", problem), result: { ...result, weekly: [], oldest_open: [] } };
+  }
   const names = nameMaps(cache);
   const actions = loadActions(cache, { site_ids: args.site_ids, priority: args.priority });
   let open = actions.filter((a) => a.open);
@@ -292,9 +331,9 @@ export function analyzeActionBacklog(
   const result = buildResult({
     version: BACKLOG_VERSION,
     period,
-    filters: { site_ids: args.site_ids, priority: args.priority, group_by: groupBy, overdue_only: args.overdue_only || undefined },
+    filters,
     cache,
-    feeds: groupBy === "assignee" ? ["actions", "action_assignees"] : ["actions"],
+    feeds,
     metrics: {
       open: open.length,
       overdue,

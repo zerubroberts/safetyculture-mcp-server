@@ -1,6 +1,6 @@
-import type { CacheReader } from "../cache/contract.js";
+import type { CacheReader, FeedName } from "../cache/contract.js";
 import { previousPeriod, type Period } from "../core/time.js";
-import { buildResult, nameMaps, str } from "./common.js";
+import { buildResult, feedProblem, nameMaps, str, unavailableSentence } from "./common.js";
 import { pct, round } from "./stats.js";
 import { completedInspections, inWindow, siteKey, siteSet, toTime } from "./trend.js";
 
@@ -10,6 +10,7 @@ import { completedInspections, inWindow, siteKey, siteSet, toTime } from "./tren
  */
 
 export const RISING_MIN = 10;
+export const HOTSPOTS_VERSION = "issue-hotspots/1";
 
 export interface HotspotArgs {
   period: Period;
@@ -33,6 +34,25 @@ const categoryOf = (r: Record<string, unknown>) => str(r.category_label)?.trim()
 export function computeHotspots(cache: CacheReader, args: HotspotArgs, now: Date) {
   const sites = siteSet(args.site_ids);
   const prev = previousPeriod(args.period);
+  const feeds: FeedName[] = ["issues", "inspections", "sites"];
+
+  // Unreadable issues feed: issue counts are missing, not zero.
+  const problem = feedProblem(cache, "issues");
+  if (problem) {
+    const result = buildResult<HotspotRow>({
+      version: HOTSPOTS_VERSION,
+      period: args.period,
+      filters: { site_ids: args.site_ids },
+      cache,
+      feeds,
+      metrics: { issues: null, previous_period_issues: null, categories: null, sites: null, rising_categories: null },
+      table: [],
+      method: "Issue hotspots need the issues feed; it could not be read, so no issue figures are computed.",
+      caveats: [`No issue figures: ${problem}. This is not zero issues.`],
+      now,
+    });
+    return { result: { ...result, by_category: [], rising: [] }, summary: unavailableSentence("Issue figures", problem) };
+  }
   const names = nameMaps(cache);
   const siteNames = new Map([...names.sites.entries()].map(([id, n]) => [siteKey(id)!, n]));
   const issues = cache.rows("issues").filter((r) => !sites || sites.has(siteKey(r.site_id) ?? ""));
@@ -80,11 +100,11 @@ export function computeHotspots(cache: CacheReader, args: HotspotArgs, now: Date
   if (!inspPerSite.size) caveats.push("No completed inspections in scope for this period, so per-inspection rates are unavailable.");
 
   const result = buildResult({
-    version: "issue-hotspots/1",
+    version: HOTSPOTS_VERSION,
     period: args.period,
     filters: { site_ids: args.site_ids },
     cache,
-    feeds: ["issues", "inspections", "sites"],
+    feeds,
     metrics: {
       issues: cur.length,
       previous_period_issues: before.length,

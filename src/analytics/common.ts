@@ -34,6 +34,28 @@ export function coverage(cache: CacheReader, feeds: FeedName[], now?: Date): Ana
   });
 }
 
+/**
+ * Why a feed's cached rows cannot back a figure, or null when they can. Unusable: never synced, refused by
+ * the API (unavailable), still downloading for the first time, or a failed refresh with no complete snapshot
+ * to fall back on. A feed that synced successfully and is empty IS usable: its zero is a true zero (and gets
+ * the "empty feed" caveat). A failed refresh over a complete earlier snapshot stays usable with a stale caveat.
+ * Figures derived from an unusable feed must be null, never 0.
+ */
+export function feedProblem(cache: CacheReader, feed: FeedName): string | null {
+  const s = cache.status([feed]).find((x) => x.feed === feed);
+  if (!s) return `the ${feed} feed has never been synced`;
+  if (s.unavailable) return `the ${feed} feed could not be read (${s.unavailable.slice(0, 200)})`;
+  if (s.last_error?.startsWith("SYNCING")) return `the ${feed} feed is still downloading for the first time`;
+  if (s.last_error && !s.complete) return `the ${feed} feed could not be read (${s.last_error.slice(0, 200)})`;
+  if (!s.last_synced_at) return `the ${feed} feed has never been synced`;
+  return null;
+}
+
+export const feedUsable = (cache: CacheReader, feed: FeedName): boolean => feedProblem(cache, feed) === null;
+
+/** Summary sentence for figures withheld because a feed is unusable, e.g. "Action figures unavailable: the actions feed could not be read (HTTP 403)." */
+export const unavailableSentence = (what: string, problem: string) => `${what} unavailable: ${problem.replace(/\.$/, "")}.`;
+
 const ageText = (min: number) => (min < 120 ? `${min} minutes` : min < 48 * 60 ? `${Math.round(min / 60)} hours` : `${Math.round(min / 1440)} days`);
 
 export function coverageCaveats(cov: AnalyticResult["coverage"]): string[] {
@@ -41,7 +63,7 @@ export function coverageCaveats(cov: AnalyticResult["coverage"]): string[] {
   for (const c of cov) {
     const age = c.age_minutes !== undefined ? ` (${ageText(c.age_minutes)} ago)` : "";
     if (c.note === "still syncing")
-      out.push(`Feed "${c.feed}" is still downloading for the first time (the Mitti API serves it slowly); these figures are partial. Ask again in a minute or two for complete numbers.`);
+      out.push(`Feed "${c.feed}" is still downloading for the first time (the Mitti API serves it slowly); figures that depend on it are withheld or partial until it finishes. Ask again in a minute or two for complete numbers.`);
     else if (c.unavailable && c.rows > 0)
       out.push(`Feed "${c.feed}" is no longer accessible to this API token (${c.unavailable}); its ${c.rows} cached rows from ${c.last_synced_at ?? "an earlier sync"}${age} are not current, so related figures may be out of date.`);
     else if (c.unavailable) out.push(`Feed "${c.feed}" is unavailable to this API token (${c.unavailable}), so related figures are missing, not zero.`);
