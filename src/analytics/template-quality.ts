@@ -1,6 +1,6 @@
 import type { CacheReader } from "../cache/contract.js";
 import type { Period } from "../core/time.js";
-import { buildResult, nameMaps } from "./common.js";
+import { buildResult, feedProblem, nameMaps, unavailableSentence } from "./common.js";
 import { median, pct, round } from "./stats.js";
 import {
   CONDITIONAL_PARENT_TYPES,
@@ -64,9 +64,14 @@ interface Acc {
 
 export function computeTemplateQuality(cache: CacheReader, args: TemplateQualityArgs, now: Date) {
   const tkey = templateKey(args.template_id);
+  // Both feeds are required: inspections pick the template's completed inspections, items carry every
+  // per-question figure. An unreadable feed gives null figures and no item rows, never zeros.
+  const noInsp = feedProblem(cache, "inspections");
+  const noItems = feedProblem(cache, "inspection_items");
+  const problem = noInsp ?? noItems;
   const window = { from: args.period.from.getTime(), to: args.period.to.getTime() };
   const insps = completedInspections(cache, window, { template_ids: [args.template_id] });
-  const items = itemsByInspection(cache, new Set(insps.map((i) => i.key)));
+  const items = problem ? new Map<string, Item[]>() : itemsByInspection(cache, new Set(insps.map((i) => i.key)));
 
   const acc = new Map<string, Acc>();
   const duplicates = new Map<string, { label: string; max_copies: number; inspections: number }>();
@@ -172,7 +177,8 @@ export function computeTemplateQuality(cache: CacheReader, args: TemplateQuality
   const dupList = [...duplicates.values()].sort((a, b) => b.inspections - a.inspections);
 
   const caveats: string[] = [];
-  if (!insps.length) caveats.push("No completed inspections of this template in the period.");
+  if (problem) caveats.push(`No ${noInsp ? "template" : "item"} figures: ${problem}. This is not a template with no items.`);
+  if (!insps.length && !noInsp) caveats.push("No completed inspections of this template in the period.");
   if (durations.length < insps.length) caveats.push(`${insps.length - durations.length} inspections have no recorded duration and are left out of the median duration.`);
   caveats.push("Blank answers are only counted as skips for items not behind conditional logic (smart fields); questions hidden by logic are not skips.");
   if (dupList.length) caveats.push(`${dupList.length} labels appear more than once in the same inspection; their rows combine several questions.`);
@@ -185,13 +191,13 @@ export function computeTemplateQuality(cache: CacheReader, args: TemplateQuality
     feeds: ["inspections", "inspection_items"],
     metrics: {
       template_name: tplName ?? null,
-      inspections: insps.length,
-      items: table.length,
-      cut_candidates: count("cut candidate"),
-      fix: count("fix"),
-      keep: count("keep"),
-      median_duration_seconds: durations.length ? round(median(durations), 0) : null,
-      duplicate_labels: dupList.length,
+      inspections: noInsp ? null : insps.length,
+      items: problem ? null : table.length,
+      cut_candidates: problem ? null : count("cut candidate"),
+      fix: problem ? null : count("fix"),
+      keep: problem ? null : count("keep"),
+      median_duration_seconds: !noInsp && durations.length ? round(median(durations), 0) : null,
+      duplicate_labels: problem ? null : dupList.length,
     },
     table,
     method:
@@ -202,6 +208,10 @@ export function computeTemplateQuality(cache: CacheReader, args: TemplateQuality
   });
   return {
     result: { ...result, duplicates: dupList },
-    summary: `${insps.length} inspections of ${tplName ? `"${tplName}"` : "the template"} over ${args.period.label}: ${table.length} items, ${count("cut candidate")} cut candidates, ${count("fix")} to fix, ${count("keep")} keep; ${dupList.length} duplicate labels.`,
+    summary: noInsp
+      ? unavailableSentence("Template quality figures", noInsp)
+      : noItems
+        ? `${insps.length} inspections of ${tplName ? `"${tplName}"` : "the template"} over ${args.period.label}. ${unavailableSentence("Item figures", noItems)}`
+        : `${insps.length} inspections of ${tplName ? `"${tplName}"` : "the template"} over ${args.period.label}: ${table.length} items, ${count("cut candidate")} cut candidates, ${count("fix")} to fix, ${count("keep")} keep; ${dupList.length} duplicate labels.`,
   };
 }

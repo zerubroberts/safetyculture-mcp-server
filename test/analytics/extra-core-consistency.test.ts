@@ -43,8 +43,8 @@ describe("extended analytics use the core definitions", () => {
     const pulse = safetyPulse(c, { period: "2026-09" }, NOW).result.metrics;
     expect(pulse).toMatchObject({ failed_items: 4, answered_items: 24 });
     const insp = computeInspectorActivity(c, { period: parsePeriod("2026-09", NOW) }, NOW).result.table;
-    expect(insp.reduce((s, r) => s + r.failed_items, 0)).toBe(4);
-    expect(insp.reduce((s, r) => s + r.answered_items, 0)).toBe(24);
+    expect(insp.reduce((s, r) => s + (r.failed_items ?? NaN), 0)).toBe(4);
+    expect(insp.reduce((s, r) => s + (r.answered_items ?? NaN), 0)).toBe(24);
   });
 
   it("live action status and priority values", () => {

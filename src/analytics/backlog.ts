@@ -244,7 +244,9 @@ export function analyzeActionBacklog(
     }
   }
 
-  // Group table. Assignee and label groupings can place one action in several groups.
+  // Group table. Assignee and label groupings can place one action in several groups. An unreadable
+  // assignees feed withholds the assignee table: every action would otherwise read as "(unassigned)".
+  const noAssignees = groupBy === "assignee" ? feedProblem(cache, "action_assignees") : null;
   const assignees = new Map<string, Array<{ key: string; name: string }>>();
   if (groupBy === "assignee") {
     for (const r of cache.rows("action_assignees")) {
@@ -262,7 +264,7 @@ export function analyzeActionBacklog(
     return a.site_id ? [{ key: canon(a.site_id), name: names.sites.get(a.site_id) ?? a.site_id }] : [{ key: "(no site)", name: "(no site)" }];
   };
   const groups = new Map<string, BacklogRow>();
-  for (const a of open) {
+  for (const a of noAssignees ? [] : open) {
     const seen = new Set<string>();
     for (const { key, name } of keysOf(a)) {
       if (seen.has(key)) continue;
@@ -324,6 +326,7 @@ export function analyzeActionBacklog(
   if (res.dropped) caveats.push(`${res.dropped} completed actions were left out of resolution times (missing created date or completed before created).`);
   if (groupBy === "assignee" || groupBy === "label") caveats.push(`An action with several ${groupBy}s is counted in each of their groups, so group totals can exceed ${open.length}.`);
   if (groupBy === "assignee") caveats.push("Group assignees are shown as the group, not expanded to members.");
+  if (noAssignees) caveats.push(`No assignee grouping: ${noAssignees}. The group table is withheld; this does not mean the actions are unassigned.`);
   caveats.push("Weekly buckets start on Monday (UTC); the first and last weeks can be partial.");
 
   const med = round(median(res.days), 1);
@@ -360,6 +363,7 @@ export function analyzeActionBacklog(
   });
   const summary =
     `${open.length} open actions${args.overdue_only ? " (overdue only)" : ""}: ${overdue} overdue, ${noDue} with no due date, ${ageBuckets["90+"]} older than 90 days. ` +
-    `${res.days.length} completed ${period.label} with median resolution ${med ?? "n/a"} days (p90 ${p90 ?? "n/a"}); ${openedInPeriod} opened vs ${closedInPeriod} closed.`;
+    `${res.days.length} completed ${period.label} with median resolution ${med ?? "n/a"} days (p90 ${p90 ?? "n/a"}); ${openedInPeriod} opened vs ${closedInPeriod} closed.` +
+    (noAssignees ? ` ${unavailableSentence("Assignee grouping", noAssignees)}` : "");
   return { summary, result: { ...result, weekly, oldest_open: oldest } };
 }

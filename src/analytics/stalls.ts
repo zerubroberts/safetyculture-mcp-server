@@ -1,7 +1,7 @@
 import type { CacheReader } from "../cache/contract.js";
 import { links } from "../core/params.js";
 import type { Period } from "../core/time.js";
-import { buildResult, groupBy, str } from "./common.js";
+import { buildResult, feedProblem, groupBy, str, unavailableSentence } from "./common.js";
 import { median, round, sum } from "./stats.js";
 import { CLOSED_STATUSES, DAY_MS, actionPriority, actionStatus, inWindow, isOpenAction, siteSet, siteKey, toTime, uuidKey } from "./trend.js";
 
@@ -98,8 +98,31 @@ const kindOf = (t: unknown) => {
   return "other";
 };
 
+const STALL_METRICS = ["median_longest_gap_days", "with_due_date_changes", "with_reassignments", "stalls_most_in"] as const;
+
 export function computeStalls(cache: CacheReader, args: StallArgs, now: Date) {
   const nowMs = now.getTime();
+  const filters = { action_ids: args.action_ids, site_ids: args.site_ids, priority: args.priority };
+  const feeds = ["actions", "action_timeline_items"] as const;
+  // Both feeds are required: without actions nothing is selected; without the timeline every action
+  // would read as untouched since creation. Either way the figures are null, never 0.
+  const noActions = feedProblem(cache, "actions");
+  const noTimeline = feedProblem(cache, "action_timeline_items");
+  if (noActions || noTimeline) {
+    const result = buildResult<StallRow>({
+      version: "action-stalls/1",
+      period: args.period,
+      filters,
+      cache,
+      feeds: [...feeds],
+      metrics: { actions: null, open: null, ...Object.fromEntries(STALL_METRICS.map((k) => [k, null])) },
+      table: [],
+      method: "Action stalls replay the action timeline; a required feed could not be read, so no timeline figures are computed.",
+      caveats: [`No stall figures: ${noActions ?? noTimeline}. This does not mean actions are not stalling.`],
+      now,
+    });
+    return { result: { ...result, by_status: [] }, summary: unavailableSentence("Action stall figures", (noActions ?? noTimeline)!) };
+  }
   const wanted = args.action_ids?.length ? new Set(args.action_ids.map((a) => uuidKey(a)!)) : undefined;
   const sites = siteSet(args.site_ids);
   const prios = args.priority?.length ? new Set(args.priority) : undefined;
@@ -114,7 +137,7 @@ export function computeStalls(cache: CacheReader, args: StallArgs, now: Date) {
 
   const rows: StallRow[] = [];
   const unreadable = { status: 0 };
-  let noTimeline = 0;
+  let withoutTimeline = 0;
   for (const a of actions) {
     const created = toTime(a.created_at);
     if (created === undefined) continue;
@@ -124,7 +147,7 @@ export function computeStalls(cache: CacheReader, args: StallArgs, now: Date) {
       .map((e) => ({ t: toTime(e.timestamp), kind: kindOf(e.item_type), data: e.item_data }))
       .filter((e): e is { t: number; kind: string; data: unknown } => e.t !== undefined)
       .sort((x, y) => x.t - y.t);
-    if (!events.length) noTimeline++;
+    if (!events.length) withoutTimeline++;
     const lastEvent = events.length ? events[events.length - 1]!.t : created;
     const end = closed ? Math.max(toTime(a.completed_at) ?? toTime(a.modified_at) ?? lastEvent, created) : nowMs;
 
@@ -202,16 +225,16 @@ export function computeStalls(cache: CacheReader, args: StallArgs, now: Date) {
     `Due-date changes and reassignments within ${SETUP_GRACE_MS / 1000}s of creation are treated as initial set-up and not counted.`,
   ];
   if (unreadable.status) caveats.push(`${unreadable.status} status-change events had no readable new status and are counted as "unknown".`);
-  if (noTimeline) caveats.push(`${noTimeline} actions have no timeline items in the cache; their time is all attributed to "to_do" (or the period up to completion).`);
+  if (withoutTimeline) caveats.push(`${withoutTimeline} actions have no timeline items in the cache; their time is all attributed to "to_do" (or the period up to completion).`);
   if (wanted && actions.length < wanted.size) caveats.push(`${wanted.size - actions.length} requested action IDs are not in the cache.`);
 
   const top = by_status[0];
   const result = buildResult({
     version: "action-stalls/1",
     period: args.period,
-    filters: { action_ids: args.action_ids, site_ids: args.site_ids, priority: args.priority },
+    filters,
     cache,
-    feeds: ["actions", "action_timeline_items"],
+    feeds: [...feeds],
     metrics: {
       actions: rows.length,
       open: rows.filter((r) => r.open).length,

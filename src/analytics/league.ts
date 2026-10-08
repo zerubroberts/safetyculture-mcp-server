@@ -1,6 +1,6 @@
 import type { AnalyticResult, CacheReader } from "../cache/contract.js";
 import { parsePeriod, previousPeriod, type Period } from "../core/time.js";
-import { buildResult, nameMaps } from "./common.js";
+import { buildResult, feedProblem, nameMaps, unavailableSentence } from "./common.js";
 import { loadActions, overdueAt, resolutionDays, type Action } from "./backlog.js";
 import { answeredItems, canon, completedInspections, idIn } from "./failed-items.js";
 import { mean, median, pct, round } from "./stats.js";
@@ -36,8 +36,8 @@ export interface LeagueRow {
   inspections: number;
   average_score: number | null;
   failed_item_rate: number | null;
-  answered_items: number;
-  overdue_actions: number;
+  answered_items: number | null;
+  overdue_actions: number | null;
   median_resolution_days: number | null;
   composite: number;
   previous_rank: number | null;
@@ -130,9 +130,35 @@ export function analyzeSiteLeague(
   const period = parsePeriod(args.period, now, "last 90 days");
   const prev = previousPeriod(period);
   const minN = args.min_inspections ?? 10;
-  const metrics = args.metrics?.length ? [...new Set(args.metrics)] : [...LEAGUE_METRICS];
+  const requested = args.metrics?.length ? [...new Set(args.metrics)] : [...LEAGUE_METRICS];
+  const filters = { site_ids: args.site_ids, min_inspections: minN, metrics: requested };
+  const feeds = ["inspections", "inspection_items", "actions", "sites"] as const;
+
+  // Metrics from an unreadable feed are withheld (null, left out of the composite), never ranked on zeros.
+  // Without inspections no site can qualify, so there is no league at all.
+  const noInsp = feedProblem(cache, "inspections");
+  const noItems = feedProblem(cache, "inspection_items");
+  const noActions = feedProblem(cache, "actions");
+  const withheld = (m: LeagueMetric) => (m === "failed_item_rate" ? noItems : m === "overdue_actions" || m === "median_resolution_days" ? noActions : null);
+  const metrics = requested.filter((m) => !withheld(m));
+  const blocker = noInsp ?? (metrics.length ? null : (requested.map(withheld).find(Boolean) ?? null));
+  if (blocker) {
+    const result = buildResult<LeagueRow>({
+      version: LEAGUE_VERSION,
+      period,
+      filters,
+      cache,
+      feeds: [...feeds],
+      metrics: { ranked_sites: null, below_minimum: null, min_inspections: minN, metrics_used: null },
+      table: [],
+      method: "The site league needs the inspections feed and the feeds behind the chosen metrics; one could not be read, so no ranking is computed.",
+      caveats: [`No site league: ${blocker}. This is not an empty league.`],
+      now,
+    });
+    return { summary: unavailableSentence("Site league", blocker), result: { ...result, below_minimum: [] } };
+  }
   const names = nameMaps(cache);
-  const actions = loadActions(cache, { site_ids: args.site_ids });
+  const actions = noActions ? [] : loadActions(cache, { site_ids: args.site_ids });
 
   const cur = siteStats(cache, period, actions, args.site_ids, now);
   const eligible = [...cur.values()].filter((s) => s.inspections >= minN);
@@ -165,22 +191,26 @@ export function analyzeSiteLeague(
       site_id: s.site_id,
       inspections: s.inspections,
       average_score: v.average_score === null ? null : round(v.average_score, 1),
-      failed_item_rate: pct(s.failed, s.answered, 2),
-      answered_items: s.answered,
-      overdue_actions: s.overdue,
-      median_resolution_days: v.median_resolution_days === null ? null : round(v.median_resolution_days, 1),
+      failed_item_rate: noItems ? null : pct(s.failed, s.answered, 2),
+      answered_items: noItems ? null : s.answered,
+      overdue_actions: noActions ? null : s.overdue,
+      median_resolution_days: noActions || v.median_resolution_days === null ? null : round(v.median_resolution_days, 1),
       composite: round(composite, 3) ?? 0,
       previous_rank: pr,
       rank_change: pr === null ? null : pr - comparable,
     };
   });
 
-  const caveats = [
+  const caveats: string[] = [];
+  if (noItems && requested.includes("failed_item_rate")) caveats.push(`Failed-item rate is left out of the ranking and shown as null: ${noItems}. This is not a 0% rate.`);
+  if (noActions && requested.some((m) => m === "overdue_actions" || m === "median_resolution_days"))
+    caveats.push(`Action metrics (open overdue, median resolution) are left out of the ranking and shown as null: ${noActions}. This is not zero overdue actions.`);
+  caveats.push(
     "The composite is a relative ranking among the listed sites, not an absolute safety rating; sites with different work and templates are not strictly comparable.",
     "Higher inspection volume ranks better and higher open overdue action counts rank worse; both scale with site size.",
     "Open overdue actions are counted as at the end of the period (or now), reconstructed from created, due and completed dates.",
     "Sites with no completed inspections in the period are not listed.",
-  ];
+  );
   if (period.to.getTime() < now.getTime() && metrics.includes("overdue_actions"))
     caveats.push("The period ended before now, so its open overdue count uses each action's current due date, site and status; changes made since the period ended are not replayed.");
   if (!histMetrics.length)
@@ -195,9 +225,9 @@ export function analyzeSiteLeague(
   const result = buildResult({
     version: LEAGUE_VERSION,
     period,
-    filters: { site_ids: args.site_ids, min_inspections: minN, metrics },
+    filters,
     cache,
-    feeds: ["inspections", "inspection_items", "actions", "sites"],
+    feeds: [...feeds],
     metrics: { ranked_sites: table.length, below_minimum: below.length, min_inspections: minN, metrics_used: metrics.join(", ") },
     table,
     method:
@@ -207,8 +237,13 @@ export function analyzeSiteLeague(
   });
   const top = table[0];
   const bottom = table[table.length - 1];
-  const summary = table.length
-    ? `${table.length} sites ranked ${period.label} (min ${minN} inspections; ${below.length} below minimum). Top: ${top!.site} (${top!.inspections} inspections, composite ${top!.composite}); bottom: ${bottom!.site} (composite ${bottom!.composite}).`
-    : `No site reached ${minN} completed inspections ${period.label}; ${below.length} sites are listed below the minimum.`;
+  const gaps = [
+    noItems && requested.includes("failed_item_rate") ? ` ${unavailableSentence("Failed-item rate", noItems)}` : "",
+    noActions && requested.some((m) => m === "overdue_actions" || m === "median_resolution_days") ? ` ${unavailableSentence("Action metrics", noActions)}` : "",
+  ].join("");
+  const summary =
+    (table.length
+      ? `${table.length} sites ranked ${period.label} (min ${minN} inspections; ${below.length} below minimum). Top: ${top!.site} (${top!.inspections} inspections, composite ${top!.composite}); bottom: ${bottom!.site} (composite ${bottom!.composite}).`
+      : `No site reached ${minN} completed inspections ${period.label}; ${below.length} sites are listed below the minimum.`) + gaps;
   return { summary, result: { ...result, below_minimum: below } };
 }

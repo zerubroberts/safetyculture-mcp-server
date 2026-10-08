@@ -1,7 +1,7 @@
 import type { CacheReader } from "../cache/contract.js";
 import { links } from "../core/params.js";
 import type { Period } from "../core/time.js";
-import { bounded, buildResult, groupBy } from "./common.js";
+import { bounded, buildResult, feedProblem, groupBy, unavailableSentence } from "./common.js";
 import { median, pct, round } from "./stats.js";
 import { FAST_SHARE, MIN_TEMPLATE_DURATIONS, templateMedianDurations } from "./inspectors.js";
 import { completedInspections, isoDay, itemCounts, itemsByInspection, type Insp, type ScopeFilter } from "./trend.js";
@@ -88,6 +88,27 @@ export function rankAnomalies(rows: AnomalyRow[]): AnomalyRow[] {
 }
 
 export function computeAnomalies(cache: CacheReader, args: AnomalyArgs, now: Date) {
+  const filters = { kinds: args.kinds, site_ids: args.site_ids, template_ids: args.template_ids };
+  const feeds = ["inspections", ...(args.kinds.includes("perfect_streak") ? (["inspection_items"] as const) : [])] as Array<"inspections" | "inspection_items">;
+  // Every pattern is read from inspections: unreadable means no checks were run, not "nothing flagged".
+  const noInsp = feedProblem(cache, "inspections");
+  if (noInsp) {
+    const result = buildResult<AnomalyRow>({
+      version: "anomalies/1",
+      period: args.period,
+      filters,
+      cache,
+      feeds,
+      metrics: { inspections_in_scope: null, flagged: null, ...Object.fromEntries(args.kinds.map((k) => [k, null])) },
+      table: [],
+      method: "Anomaly checks need the inspections feed; it could not be read, so no checks were run.",
+      caveats: [`No anomaly checks: ${noInsp}. This is not "nothing flagged".`],
+      now,
+    });
+    return { result: { ...result, total: 0, truncated: false }, summary: unavailableSentence("Anomaly checks", noInsp) };
+  }
+  // Perfect streaks need item failure rates; without the items feed that check is not run.
+  const noItems = args.kinds.includes("perfect_streak") ? feedProblem(cache, "inspection_items") : null;
   const window = { from: args.period.from.getTime(), to: args.period.to.getTime() };
   // Baselines use every completed inspection in the period; the scope only limits what is flagged.
   const all = completedInspections(cache, window);
@@ -116,7 +137,8 @@ export function computeAnomalies(cache: CacheReader, args: AnomalyArgs, now: Dat
     checked.too_fast_checked = n;
   }
 
-  if (kinds.has("perfect_streak")) {
+  if (kinds.has("perfect_streak") && noItems) checked.perfect_streaks = null;
+  else if (kinds.has("perfect_streak")) {
     const counts = itemCounts(itemsByInspection(cache, new Set(all.map((i) => i.key))));
     const tplFail = new Map<string, { answered: number; failed: number }>();
     for (const i of all) {
@@ -216,19 +238,20 @@ export function computeAnomalies(cache: CacheReader, args: AnomalyArgs, now: Dat
 
   const ranked = rankAnomalies(table);
   const shown = bounded(ranked, args.limit);
-  const byKind = Object.fromEntries(args.kinds.map((k) => [k, table.filter((r) => r.kind === k).length]));
+  const byKind: Record<string, number | null> = Object.fromEntries(args.kinds.map((k) => [k, k === "perfect_streak" && noItems ? null : table.filter((r) => r.kind === k).length]));
   const caveats = [
     "These are patterns to review, not evidence of wrongdoing. Short walk-throughs, well-run areas, batch data entry after an outage and offline syncs all produce the same patterns.",
     "Duration is the feed's duration field, read as seconds; inspections without a duration are not checked for speed.",
   ];
+  if (noItems) caveats.push(`Perfect streaks were not checked: ${noItems}. This is not "no streaks".`);
   if (shown.truncated)
     caveats.push(`Showing ${shown.rows.length} of ${shown.total} flags: the strongest of each kind first, kinds interleaved. Counts per kind cover all ${shown.total}. Raise limit or pick one kind to see the rest.`);
   const result = buildResult({
     version: "anomalies/1",
     period: args.period,
-    filters: { kinds: args.kinds, site_ids: args.site_ids, template_ids: args.template_ids },
+    filters,
     cache,
-    feeds: ["inspections", ...(kinds.has("perfect_streak") ? (["inspection_items"] as const) : [])],
+    feeds,
     metrics: { inspections_in_scope: scoped.length, flagged: table.length, ...byKind, ...checked },
     table: shown.rows,
     method:
@@ -239,12 +262,13 @@ export function computeAnomalies(cache: CacheReader, args: AnomalyArgs, now: Dat
     caveats,
     now,
   });
-  const parts = args.kinds.map((k) => `${byKind[k]} ${k.replace("_", " ")}`).join(", ");
+  const parts = args.kinds.map((k) => (byKind[k] === null ? `${k.replace("_", " ")} not checked` : `${byKind[k]} ${k.replace("_", " ")}`)).join(", ");
   return {
     result: { ...result, total: shown.total, truncated: shown.truncated },
     summary:
       `${table.length} inspections match a review pattern over ${args.period.label} (${parts}) out of ${scoped.length} in scope` +
       (shown.truncated ? `; the strongest ${shown.rows.length} are listed` : "") +
-      ". These are prompts to look closer, not findings about anyone.",
+      ". These are prompts to look closer, not findings about anyone." +
+      (noItems ? ` ${unavailableSentence("Perfect-streak check", noItems)}` : ""),
   };
 }
