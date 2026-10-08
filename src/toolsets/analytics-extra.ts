@@ -69,11 +69,12 @@ export const analyticsExtraTools: AnyToolSpec[] = [
       period: P.period("last 30 days"),
       site_ids: P.siteIds,
       template_ids: P.templateIds,
+      limit: P.limit(50, 500),
     },
     run: async (a, ctx) => {
       const now = ctx.now();
       const cache = await ctx.cache.ensure(["inspections", "inspection_items", "users"]);
-      const { result, summary } = computeInspectorActivity(cache, { period: parsePeriod(a.period, now), site_ids: a.site_ids, template_ids: a.template_ids }, now);
+      const { result, summary } = computeInspectorActivity(cache, { period: parsePeriod(a.period, now), site_ids: a.site_ids, template_ids: a.template_ids, limit: a.limit ?? 50 }, now);
       return asTool(summary, result);
     },
   }),
@@ -90,12 +91,13 @@ export const analyticsExtraTools: AnyToolSpec[] = [
       period: P.period("last 30 days"),
       site_ids: P.siteIds,
       template_ids: P.templateIds,
+      limit: P.limit(50, 500),
     },
     run: async (a, ctx) => {
       const now = ctx.now();
       const kinds = a.kind ? [a.kind] : [...ANOMALY_KINDS];
       const cache = await ctx.cache.ensure(kinds.includes("perfect_streak") ? ["inspections", "inspection_items"] : ["inspections"]);
-      const { result, summary } = computeAnomalies(cache, { kinds, period: parsePeriod(a.period, now), site_ids: a.site_ids, template_ids: a.template_ids }, now);
+      const { result, summary } = computeAnomalies(cache, { kinds, period: parsePeriod(a.period, now), site_ids: a.site_ids, template_ids: a.template_ids, limit: a.limit ?? 50 }, now);
       return asTool(summary, result);
     },
   }),

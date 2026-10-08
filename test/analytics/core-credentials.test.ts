@@ -96,4 +96,24 @@ describe("analyzeCredentialRadar", () => {
       "later",
     ]);
   });
+
+  it("caps the table and rollups at limit, most urgent first, with counts over the full set", () => {
+    const rows = Array.from({ length: 70 }, (_, k) =>
+      // 70 people, each one First Aid credential expiring k - 10 days from today (10 already expired).
+      cred(`dx${k}`, `user_${k}`, `Person${String(k).padStart(2, "0")}`, "First Aid", new Date(Date.UTC(2026, 9, 8 + k - 10)).toISOString().slice(0, 10)),
+    );
+    const cache = new FakeCache().seed("credentials", rows).seed("users", []);
+    const { result, summary } = analyzeCredentialRadar(cache, { horizon: "next 90 days" }, NOW);
+    expect(result.table).toHaveLength(50);
+    expect(result).toMatchObject({ total: 70, truncated: true });
+    expect(result.metrics).toMatchObject({ expired: 10, listed: 70, people: 70 });
+    expect(result.table[0]).toMatchObject({ days_left: -10, bucket: "expired" });
+    expect(result.table[49]!.days_left).toBe(39);
+    expect(result.by_person).toHaveLength(50);
+    expect(result.by_person.slice(0, 10).every((p) => p.expired === 1)).toBe(true);
+    expect(result.by_type).toEqual([expect.objectContaining({ credential_type: "First Aid", expired: 10, total: 70 })]);
+    expect(result.caveats.some((c) => c.includes("Showing the 50 most urgent credentials"))).toBe(true);
+    expect(summary).toContain("70 credentials need attention");
+    expect(analyzeCredentialRadar(cache, { horizon: "next 90 days", limit: 3 }, NOW).result.table.map((r) => r.days_left)).toEqual([-10, -9, -8]);
+  });
 });

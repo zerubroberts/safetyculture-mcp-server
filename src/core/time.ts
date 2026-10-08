@@ -12,6 +12,19 @@ const addDays = (d: Date, n: number) => new Date(d.getTime() + n * DAY);
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 
 /**
+ * `d` moved by whole calendar months (negative = back), with the day clamped to the target month's
+ * last day: May 31 minus 1 month is Apr 30, Feb 29 minus 12 months is Feb 28. Time of day is kept.
+ * Plain Date.UTC would overflow instead (Apr 31 becomes May 1).
+ */
+export function addMonths(d: Date, months: number): Date {
+  const target = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + months, 1));
+  const y = target.getUTCFullYear();
+  const mo = target.getUTCMonth();
+  const lastDay = new Date(Date.UTC(y, mo + 1, 0)).getUTCDate();
+  return new Date(Date.UTC(y, mo, Math.min(d.getUTCDate(), lastDay), d.getUTCHours(), d.getUTCMinutes(), d.getUTCSeconds(), d.getUTCMilliseconds()));
+}
+
+/**
  * Parses human period strings into a UTC [from, to) window.
  * Accepts: "last 30 days", "past 2 weeks", "30d", "12w", "6m", "1y", "today", "yesterday",
  * "this week|month|quarter|year", "last week|month|quarter|year", "ytd", "mtd",
@@ -54,15 +67,15 @@ export function parsePeriod(input: string | undefined, now = new Date(), fallbac
     const unit = m[2]![0];
     if (unit === "d") return mk(addDays(tomorrow, -n), tomorrow);
     if (unit === "w") return mk(addDays(tomorrow, -7 * n), tomorrow);
-    if (unit === "m") return mk(new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - n, today.getUTCDate() + 1)), tomorrow);
-    return mk(new Date(Date.UTC(today.getUTCFullYear() - n, today.getUTCMonth(), today.getUTCDate() + 1)), tomorrow);
+    if (unit === "m") return mk(addDays(addMonths(today, -n), 1), tomorrow);
+    return mk(addDays(addMonths(today, -12 * n), 1), tomorrow);
   }
 
   if ((m = raw.match(/^(?:next|coming)\s*(\d+)\s*(d|day|days|w|wk|week|weeks|m|mo|month|months)$/))) {
     const n = Number(m[1]);
     const unit = m[2]![0];
     const days = unit === "d" ? n : unit === "w" ? 7 * n : 0;
-    const to = days ? addDays(tomorrow, days) : new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + n, today.getUTCDate() + 1));
+    const to = days ? addDays(tomorrow, days) : addDays(addMonths(today, n), 1);
     return mk(today, to);
   }
 

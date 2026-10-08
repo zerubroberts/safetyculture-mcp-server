@@ -51,4 +51,24 @@ describe("computeInspectorActivity", () => {
     expect(result.caveats.some((c) => c.includes("not a performance score"))).toBe(true);
     expect(result.caveats).toContain('Feed "users" is empty for this organisation (module unused or no access).');
   });
+
+  it("caps the table at limit (most inspections first) but computes metrics on every inspector", () => {
+    const ins: Record<string, unknown>[] = [];
+    // 60 inspectors; inspector k completes (k % 5) + 1 inspections.
+    for (let k = 0; k < 60; k++)
+      for (let j = 0; j <= k % 5; j++)
+        ins.push(insp(`audit_${k}_${j}`, { tpl: "template_ta", owner: `user_${String(k).padStart(2, "0")}`, ownerName: `Demo Person ${String(k).padStart(2, "0")}`, completed: "2026-09-20T10:00:00.000Z" }));
+    const big = new FakeCache().seed("inspections", ins).seed("inspection_items", []).seed("users", []);
+    const args = { period: parsePeriod("last 30 days", NOW) };
+    const { result } = computeInspectorActivity(big, args, NOW);
+    expect(result.table).toHaveLength(50);
+    expect(result).toMatchObject({ total: 60, truncated: true });
+    expect(result.metrics).toMatchObject({ inspectors: 60, inspections: ins.length });
+    expect(result.table[0]).toMatchObject({ inspector_name: "Demo Person 04", inspections: 5 });
+    expect(result.table.every((r, i, a) => i === 0 || a[i - 1]!.inspections >= r.inspections)).toBe(true);
+    expect(result.caveats.some((c) => c.includes("Showing the 50 inspectors with the most inspections out of 60"))).toBe(true);
+    const small = computeInspectorActivity(big, { ...args, limit: 5 }, NOW).result;
+    expect(small.table.map((r) => r.inspector_name)).toEqual(result.table.slice(0, 5).map((r) => r.inspector_name));
+    expect(computeInspectorActivity(big, { ...args, limit: 500 }, NOW).result).toMatchObject({ total: 60, truncated: false });
+  });
 });
