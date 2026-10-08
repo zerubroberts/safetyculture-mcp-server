@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "safetyculture-mcp",
   "display_name": "SafetyCulture MCP (for Mitti)",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Ask your Mitti (formerly SafetyCulture) data anything: inspections, actions, issues, schedules, credentials, analytics and reports. Read-only by default.",
   "long_description": "Independent open-source MCP server. Not affiliated with SafetyCulture Pty Ltd or Mitti. Read-only unless you choose a write mode; destructive changes need a dry run and a one-time confirmation. Leave the token empty and turn on demo mode to try it with a fictional organisation.",
   "author": { "name": "Zerub Roberts", "url": "https://github.com/zerubroberts" },

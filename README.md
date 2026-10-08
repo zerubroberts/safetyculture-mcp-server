@@ -99,11 +99,65 @@ Exact file locations, secret handling, Gemini CLI, Zed, ChatGPT and Docker: **[c
 | *"Build the audit evidence pack for the northern region, last 12 months."* | `sc_report_audit_pack` writes a printable HTML + Markdown report: volume, scores, failed-item Pareto, action closure, issues, schedule compliance, data coverage. |
 | *"Which scheduled inspections were missed last month, and which were done suspiciously fast?"* | `sc_analyze_schedule_compliance` and `sc_analyze_inspection_anomalies`. |
 | *"Raise one corrective action per site for blocked exits, due in 14 days. Show me first."* | With writes enabled, the assistant proposes a table, then `sc_create_action` per row after you agree. |
+| *"Build me a safety dashboard for the last 90 days."* | `sc_build_dashboard` writes an interactive HTML dashboard with six views, period presets and a site filter (inline in clients that support MCP Apps). |
+| *"Prepare the September board pack."* | `sc_report_monthly_board_pack`: the month in brief, KPIs with 12-month trends, site league, actions and schedules, ready to print. |
 | *"Export the last year to Power BI."* | `sc_export_bi_bundle` writes a star schema with a Power Query script and a Qlik load script. |
 
 These are also built-in prompts (for example `/mcp__safetyculture__weekly_safety_review` in Claude Code).
 
 ## Dashboards and reports
+
+Ask for a dashboard or a report and the server writes a self-contained HTML file from your local cache: no scripts in reports, no external requests, every number from the same analytics the assistant uses. In clients that support [MCP Apps](https://modelcontextprotocol.io), the dashboard also opens inline in the chat.
+
+### Interactive dashboard: `sc_build_dashboard`
+
+Six views (overview, inspections, actions, schedules, sites, people and templates), 7/30/90-day and 12-month presets, a site filter, light and dark themes. One file, opens offline.
+
+<table>
+<tr>
+<td width="66%"><a href="assets/screenshots/dashboard-overview-1440.png"><img src="assets/readme/gallery/dashboard-overview.png" alt="Dashboard overview for the demo organisation: one-sentence answer, KPI tiles with change and sparklines, a calendar heatmap of inspections per day, weekly trends and the attention list."></a></td>
+<td><a href="assets/screenshots/dashboard-overview-390.png"><img src="assets/readme/gallery/dashboard-phone.png" alt="The same dashboard on a phone."></a></td>
+</tr>
+<tr>
+<td colspan="2">
+<a href="assets/screenshots/dashboard-actions-1440.png"><img src="assets/readme/gallery/dashboard-actions.png" width="32%" alt="Actions view: every open action as a dot by age and priority, opened vs closed per week, overdue by site."></a>
+<a href="assets/screenshots/dashboard-sites-1440.png"><img src="assets/readme/gallery/dashboard-sites.png" width="32%" alt="Sites view: site league, failed-item rate this period vs previous as a dumbbell chart."></a>
+<a href="assets/screenshots/dashboard-dark-1440.png"><img src="assets/readme/gallery/dashboard-dark.png" width="32%" alt="The overview in the dark theme."></a>
+</td>
+</tr>
+</table>
+
+### Seven ready-made reports
+
+Board-pack style: a "month in brief" (what changed, what to watch, what we need), numbered exhibits whose titles state the takeaway, KPI tiles with sparklines, heatmaps and before/after charts, small samples flagged instead of headlined, a data-coverage appendix, A4 print and a Markdown twin.
+
+| Report | Tool | For |
+|---|---|---|
+| Monthly board pack | `sc_report_monthly_board_pack` | leadership, monthly |
+| Weekly safety pulse | `sc_report_safety_pulse` | the Monday meeting |
+| Action backlog | `sc_report_action_backlog` | operations, follow-up |
+| Schedule compliance | `sc_report_schedule_compliance` | supervisors |
+| Inspection quality | `sc_report_inspection_quality` | template owners, auditors |
+| Audit evidence pack | `sc_report_audit_pack` | external or internal audit |
+| Site scorecard | `sc_report_site_scorecard` | site managers |
+
+<table>
+<tr>
+<td width="66%"><a href="assets/screenshots/report-monthly-board-pack.png"><img src="assets/readme/gallery/report-board-pack.png" alt="Monthly board pack for the demo organisation: the month in brief, executive summary and KPI tiles with change chips and 12-month sparklines."></a></td>
+<td><a href="assets/screenshots/report-monthly-board-pack-390.png"><img src="assets/readme/gallery/report-board-pack-phone.png" alt="The board pack on a phone."></a></td>
+</tr>
+<tr>
+<td colspan="2">
+<a href="assets/screenshots/report-action-backlog.png"><img src="assets/readme/gallery/report-action-backlog.png" width="24%" alt="Action backlog report."></a>
+<a href="assets/screenshots/report-schedule-compliance.png"><img src="assets/readme/gallery/report-schedule-compliance.png" width="24%" alt="Schedule compliance report."></a>
+<a href="assets/screenshots/report-inspection-quality.png"><img src="assets/readme/gallery/report-inspection-quality.png" width="24%" alt="Inspection quality report."></a>
+<a href="assets/screenshots/report-site-scorecard.png"><img src="assets/readme/gallery/report-site-scorecard.png" width="24%" alt="Site scorecard report."></a>
+</td>
+</tr>
+<tr><td colspan="2"><sub>All screenshots: the fictional demo organisation. Click any preview for the full page.</sub></td></tr>
+</table>
+
+### Plain answers with the method attached
 
 Every analysis returns a plain summary plus the data behind it, the exact period, how fresh each feed is, the formula used and its caveats. Examples from the demo organisation on 8 October 2026:
 
@@ -111,17 +165,7 @@ Every analysis returns a plain summary plus the data behind it, the exact period
 
 > **sc_analyze_compare:** Northpoint Store (42 inspections) vs Eastgate Yard (42 inspections): failed-item rate 1.28% vs 9.2% (**real difference**), average score 98.7% vs 90.5% (**real difference**), median resolution 5.3 vs 16.4 days (**not enough data**).
 
-> **sc_analyze_failed_items:** 332 failed items out of 6,869 answered (4.8%) across 526 completed inspections, last 90 days. Top: "Fire extinguisher tag current" with 46 (13.9% of failures).
-
 > **sc_analyze_credential_radar:** 28 credentials need attention in the next 30 days: 17 expired, 5 within 7 days, 6 within 8 to 30 days, across 23 people.
-
-<table>
-<tr>
-<td width="62%"><img src="assets/screenshots/report-safety-pulse.png" alt="Generated weekly safety pulse report for the demo organisation: attention list, key figures with deltas, inspections per week chart, top failed items, overdue actions and data coverage."></td>
-<td><img src="assets/screenshots/report-safety-pulse-mobile.png" alt="The same report on a phone-width screen."></td>
-</tr>
-<tr><td colspan="2"><sub>Generated by <code>sc_report_safety_pulse</code>: one self-contained HTML file (no scripts, no external requests, prints on A4) plus a Markdown twin.</sub></td></tr>
-</table>
 
 ## Safe by default
 

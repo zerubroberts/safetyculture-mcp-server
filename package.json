@@ -1,6 +1,6 @@
 {
   "name": "safetyculture-mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Unofficial Model Context Protocol server for Mitti (formerly SafetyCulture): inspections, actions, issues, assets, schedules, training and analytics for Claude, Codex, Cursor and any MCP client.",
   "type": "module",
   "bin": {

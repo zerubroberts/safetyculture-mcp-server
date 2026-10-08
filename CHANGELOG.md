@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 (2026-10-08)
 
 - `sc_build_dashboard`: an interactive, self-contained HTML safety dashboard with six views (overview, inspections, actions, schedules, sites, people and templates), period and site filters, light and dark themes. Every figure comes from the analytics.
 - Four new default reports: `sc_report_monthly_board_pack`, `sc_report_action_backlog`, `sc_report_schedule_compliance`, `sc_report_inspection_quality`.
