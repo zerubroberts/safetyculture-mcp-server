@@ -86,7 +86,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, opts: { require
 
   const toolsetsRaw = list(env.SC_TOOLSETS);
   // Demo mode keeps its cache and audit log apart from a real organisation's.
-  const dataDir = env.SC_DATA_DIR ?? join(homedir(), ".safetyculture-mcp", ...(demo ? ["demo"] : []));
+  const baseData = env.SC_DATA_DIR ?? join(homedir(), ".safetyculture-mcp");
+  // Demo mode always gets its own folder (cache, exports, audit log), even under SC_DATA_DIR.
+  const dataDir = demo ? join(baseData, "demo") : baseData;
 
   return {
     apiToken: parsed.data.token,

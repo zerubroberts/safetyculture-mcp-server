@@ -178,7 +178,7 @@ describe("inspections toolset", () => {
     const api = new MockApi()
       .on("GET /audits/audit_1/web_report_link", { url: "https://example.test/report/1" })
       .on("POST /audits/audit_1/deep_link", { url: "https://example.test/deep/1" });
-    const { call, json } = await connect(api);
+    const { call, json } = await connect(api, { SC_MODE: "write" });
     const data = json((await call("sc_get_inspection_report_link", { inspection_id: "audit_1" })).text);
     expect(data).toMatchObject({ web_report_url: "https://example.test/report/1", deep_link: "https://example.test/deep/1" });
   });

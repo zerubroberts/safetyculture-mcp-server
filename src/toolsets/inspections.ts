@@ -399,10 +399,10 @@ export const inspectionsTools = [
     name: "sc_get_inspection_report_link",
     title: "Get inspection report link",
     toolset: "inspections",
-    access: "read",
-    core: true,
+    access: "write",
+    core: false,
     description:
-      "Returns the inspection's web report link (never expires until deleted) and a mobile deep link (expires about a year after creation). Use when someone needs to open the inspection in a browser or the Mitti app.",
+      "Creates (or returns) a shareable web report link for one inspection, which anyone with the link can open and which lasts until deleted, plus a mobile deep link. Only use it when the user wants to share the report. For a sign-in link to open the inspection yourself, use the `link` / `report_link` fields that sc_search_inspections and sc_get_inspection already return.",
     input: { inspection_id: P.inspectionId },
     run: async ({ inspection_id }, ctx) => {
       const auditId = ids.audit(inspection_id);

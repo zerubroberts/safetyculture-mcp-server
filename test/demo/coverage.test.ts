@@ -77,7 +77,7 @@ describe("demo organisation: every read tool is served", () => {
 
   it("answers every no-argument read tool without an error", async () => {
     // Read tools plus local-write tools (sync, exports, reports report readOnlyHint=false).
-    const localWrite = /^sc_(sync|export_|report_)/;
+    const localWrite = /^sc_(sync|export_|report_|analyze_|safety_pulse|query_cache|list_feeds)/;
     const tools = (await client.listTools()).tools.filter(
       (t) => (t.annotations?.readOnlyHint || localWrite.test(t.name)) && !(t.inputSchema.required ?? []).length,
     );

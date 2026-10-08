@@ -85,6 +85,13 @@ export interface ToolSpec<S extends z.ZodRawShape = z.ZodRawShape> {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type AnyToolSpec = ToolSpec<any>;
 
+// Tools that refresh the local analytics cache as a side effect (all analytics and reports, plus
+// the cache inspection tools) report readOnlyHint=false: they change nothing in Mitti but do
+// write local state.
+const CACHE_TOOLS = new Set(["sc_query_cache", "sc_list_feeds", "sc_sync_status"]);
+export const writesLocalState = (spec: { localWrite?: boolean; toolset: string; name: string }) =>
+  Boolean(spec.localWrite) || spec.toolset === "analytics" || spec.toolset === "reports" || CACHE_TOOLS.has(spec.name);
+
 export function defineTool<S extends z.ZodRawShape>(spec: ToolSpec<S>): AnyToolSpec {
   if (spec.access === "destructive" && !spec.plan) throw new Error(`${spec.name}: destructive tools need a plan()`);
   if (!/^sc_[a-z0-9_]+$/.test(spec.name)) throw new Error(`${spec.name}: tool names must be sc_snake_case`);
@@ -117,15 +124,21 @@ function keyFor(cfg: Pick<Config, "apiToken">): Buffer {
 
 /**
  * Renders a tool result. Server-authored `notice` text (for example dry-run instructions) stays
- * outside the envelope. The summary and data are masked, and when they may contain user-typed
- * text they BOTH go inside the untrusted-data envelope.
+ * outside the envelope. Everything derived from the Mitti account (summary AND data) always goes
+ * inside the untrusted-data envelope: any field can carry text an admin or frontline user typed,
+ * so this is not left to each tool to opt in to.
+ *
+ * Strict privacy: sanitize() records every person name it pseudonymises in the data, and the same
+ * replacements are applied to the summary sentence, so a name cannot slip out through prose.
  */
 export function formatResult(result: ToolResult, cfg: Pick<Config, "pii" | "maxResultChars" | "apiToken">, notice?: string): string {
   const key = keyFor(cfg);
-  const summary = maskText(result.summary, cfg.pii, key);
   const head = notice ? `${redactSecrets(notice)}\n\n` : "";
-  if (result.data === undefined) return `${head}${result.untrusted ? wrapUntrusted(summary) : summary}`;
-  const clean = sanitize(result.data, cfg.pii, { key });
+  const replaced = new Map<string, string>();
+  const clean = result.data === undefined ? undefined : sanitize(result.data, cfg.pii, { key, collect: replaced });
+  let summary = maskText(result.summary, cfg.pii, key);
+  if (cfg.pii === "strict") summary = applyReplacements(summary, replaced);
+  if (clean === undefined) return `${head}${wrapUntrusted(summary)}`;
   let json = JSON.stringify(clean);
   let note = "";
   if (json.length > cfg.maxResultChars) {
@@ -133,8 +146,16 @@ export function formatResult(result: ToolResult, cfg: Pick<Config, "pii" | "maxR
     json = JSON.stringify(shrunk.value);
     note = `\n\nNote: output trimmed to fit (${shrunk.note}). Narrow the filters, request a smaller limit, or use an export tool (sc_export_dataset) for the full data set.`;
   }
-  const body = result.untrusted ? wrapUntrusted(`${summary}\n\n${json}`) : `${summary}\n\n${json}`;
-  return `${head}${body}${note}`;
+  return `${head}${wrapUntrusted(`${summary}\n\n${json}`)}${note}`;
+}
+
+function applyReplacements(text: string, replaced: Map<string, string>): string {
+  let out = text;
+  // Longest first, so "Alex Carter" is replaced before "Alex".
+  for (const [original, alias] of [...replaced.entries()].sort((a, b) => b[0].length - a[0].length)) {
+    if (original.length >= 2) out = out.split(original).join(alias);
+  }
+  return out;
 }
 
 /** Repeatedly halves the largest array until the JSON fits. */
@@ -203,7 +224,7 @@ export function createRegistry(server: McpServer, ctx: ToolContext): Registry {
         inputSchema: input,
         annotations: {
           title: spec.title,
-          readOnlyHint: spec.access === "read" && !spec.localWrite,
+          readOnlyHint: spec.access === "read" && !writesLocalState(spec),
           destructiveHint: spec.access === "destructive",
           idempotentHint: spec.access === "read" || Boolean(spec.idempotent),
           openWorldHint: true,
