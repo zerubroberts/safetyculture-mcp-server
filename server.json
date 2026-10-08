@@ -1,0 +1,47 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.zerubroberts/safetyculture-mcp",
+  "description": "Unofficial MCP server for Mitti (formerly SafetyCulture): inspections, actions, issues, assets, schedules, credentials, analytics and reports. Read-only by default.",
+  "repository": {
+    "url": "https://github.com/zerubroberts/safetyculture-mcp-server",
+    "source": "github"
+  },
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "safetyculture-mcp",
+      "version": "0.1.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "SC_API_TOKEN",
+          "description": "Mitti / SafetyCulture API token (create a least-privilege integration user)",
+          "isRequired": true,
+          "isSecret": true,
+          "format": "string"
+        },
+        {
+          "name": "SC_MODE",
+          "description": "read-only (default), write, or full",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "SC_TOOLSETS",
+          "description": "Comma-separated toolsets or all (default: default)",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "SC_PII",
+          "description": "none, contact (default) or strict",
+          "isRequired": false,
+          "format": "string"
+        }
+      ]
+    }
+  ]
+}
