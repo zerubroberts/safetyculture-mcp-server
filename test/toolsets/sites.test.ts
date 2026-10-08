@@ -75,6 +75,26 @@ describe("sites toolset", () => {
     expect(api.calls.filter((c) => c.path.startsWith("/directory/v1/parent/"))).toHaveLength(2);
   });
 
+  it("stops the tree at max_nodes and marks the cut-off parents truncated", async () => {
+    const child = (id: string) => ({ folder: { id, name: `Demo Site ${id}`, meta_label: "location" }, has_children: true, children_count: 4 });
+    const api = new MockApi()
+      .on("GET ^/directory/v1/folder/[^/]+$", { folder: { id: "site-0", name: "Demo Region", meta_label: "region" } })
+      .on("GET /directory/v1/parent/site-0/folders", { folders: ["site-1", "site-2", "site-3", "site-4", "site-5"].map(child) })
+      .on("GET ^/directory/v1/parent/[^/]+/folders$", { folders: [child("site-x")] });
+    const { call, json } = await connect(api);
+    const res = await call("sc_site_tree", { site_id: "site-0", depth: 3, max_nodes: 3 });
+    expect(res.isError).toBe(false);
+    expect(res.text).toMatch(/Stopped at 3 sites/);
+    const data = json(res.text);
+    expect(data).toMatchObject({ node_count: 3, node_cap_reached: true });
+    const root = data.roots[0];
+    expect(root.truncated).toBe(true);
+    expect(root.children.map((c: { id: string }) => c.id)).toEqual(["site-1", "site-2"]);
+    expect(root.children.every((c: { truncated?: boolean }) => c.truncated)).toBe(true);
+    // No children fetched once the budget is spent.
+    expect(api.calls.filter((c) => c.path.startsWith("/directory/v1/parent/"))).toHaveLength(1);
+  });
+
   it("discovers top-level sites when no site is given", async () => {
     const api = new MockApi()
       .on("POST /directory/v1/folders/search", {

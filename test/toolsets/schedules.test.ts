@@ -61,6 +61,97 @@ describe("schedules toolset", () => {
     expect(classifyOccurrence(occurrence("f", {}), now)).toBe("missed"); // past due_time, nothing done
   });
 
+  it("classifies OVERDUE occurrences (past miss_time, before due_time) as overdue", () => {
+    const now = new Date("2026-10-08T12:00:00Z");
+    const window = { start_time: "2026-10-08T08:00:00Z", miss_time: "2026-10-08T10:00:00Z", due_time: "2026-10-08T18:00:00Z" };
+    expect(classifyOccurrence(occurrence("o1", { ...window, occurrence_status: "OVERDUE" }), now)).toBe("overdue");
+    expect(classifyOccurrence(occurrence("o2", { ...window, occurrence_status: "TODO" }), now)).toBe("overdue");
+    expect(classifyOccurrence(occurrence("o3", { ...window, miss_time: "2026-10-08T14:00:00Z" }), now)).toBe("upcoming");
+    expect(classifyOccurrence(occurrence("o4", { ...window, due_time: "2026-10-08T11:00:00Z" }), now)).toBe("missed");
+  });
+
+  it("filters occurrences by overdue", async () => {
+    const api = new MockApi().on("GET /scheduling/v1/feed/schedule_occurrences", {
+      data: [
+        occurrence("o", { occurrence_status: "OVERDUE", miss_time: "2026-10-08T10:00:00Z", due_time: "2099-01-01T17:00:00Z" }),
+        occurrence("u", { occurrence_status: "TODO", due_time: "2099-01-01T17:00:00Z" }),
+      ],
+      metadata: {},
+    });
+    const { call, json } = await connect(api);
+    const res = await call("sc_list_schedule_occurrences", { status: ["overdue"] });
+    expect(res.isError).toBe(false);
+    const data = json(res.text);
+    expect(data.occurrences.map((o: { occurrence: string }) => o.occurrence)).toEqual(["occ-o"]);
+    expect(data.by_status).toEqual({ overdue: 1 });
+  });
+
+  it("pages current schedules then legacy items with a composite cursor", async () => {
+    const api = new MockApi()
+      .on("GET /scheduling/v1/feed/schedules", (req: { query: Record<string, string> }) =>
+        req.query.next_page_token === "cur-2"
+          ? { data: [{ ...feedSchedule, id: "sched-2" }], metadata: {} }
+          : { data: [feedSchedule], metadata: { next_page_token: "cur-2" } },
+      )
+      .on("GET /schedules/v1/schedule_items", (req: { query: Record<string, string> }) =>
+        req.query.page_token === "leg-2"
+          ? { items: [{ ...legacyItem, id: "legacy-2" }], total: 2 }
+          : { items: [legacyItem], next_page_token: "leg-2", total: 2 },
+      );
+    const { call, json } = await connect(api);
+    const ids = (d: { schedules: Array<{ id: string }> }) => d.schedules.map((s) => s.id);
+
+    const p1 = json((await call("sc_list_schedules", { limit: 2 })).text);
+    expect(ids(p1)).toEqual(["sched-1"]);
+    expect(api.calls.some((c) => c.path === "/schedules/v1/schedule_items")).toBe(false);
+    expect(p1.next_page_token).toBeTruthy();
+    expect(p1.next_page_token).not.toBe("cur-2");
+
+    const p2 = json((await call("sc_list_schedules", { limit: 2, page_token: p1.next_page_token })).text);
+    expect(ids(p2)).toEqual(["sched-2", "legacy-1"]);
+    const legacyFirst = api.calls.filter((c) => c.path === "/schedules/v1/schedule_items");
+    expect(legacyFirst).toHaveLength(1);
+    expect(legacyFirst[0]!.query.page_token).toBeUndefined(); // never the current feed's token
+    expect(legacyFirst[0]!.query.page_size).toBe("1");
+
+    const feedCallsBefore = api.calls.filter((c) => c.path === "/scheduling/v1/feed/schedules").length;
+    const p3 = json((await call("sc_list_schedules", { limit: 2, page_token: p2.next_page_token })).text);
+    expect(ids(p3)).toEqual(["legacy-2"]);
+    expect(api.calls.filter((c) => c.path === "/scheduling/v1/feed/schedules")).toHaveLength(feedCallsBefore);
+    expect(api.calls.filter((c) => c.path === "/schedules/v1/schedule_items").pop()!.query.page_token).toBe("leg-2");
+    expect(p3.next_page_token).toBeUndefined();
+
+    const bad = await call("sc_list_schedules", { page_token: "cur-2" });
+    expect(bad.isError).toBe(true);
+    expect(bad.text).toMatch(/Invalid page_token/);
+  });
+
+  it("gets a legacy schedule item from the legacy API when source is legacy", async () => {
+    const api = new MockApi().on("GET /schedules/v1/schedule_items", (req: { query: Record<string, string> }) =>
+      req.query.page_token === "p2" ? { items: [legacyItem] } : { items: [{ ...legacyItem, id: "legacy-0" }], next_page_token: "p2" },
+    );
+    const { call, json } = await connect(api);
+    const res = await call("sc_get_schedule", { schedule_id: "legacy-1", source: "legacy" });
+    expect(res.isError).toBe(false);
+    expect(api.calls.every((c) => c.path === "/schedules/v1/schedule_items")).toBe(true);
+    expect(json(res.text)).toMatchObject({ source: "legacy", id: "legacy-1", status: "paused", next_due: "2026-11-01T17:00:00Z" });
+
+    const missing = await call("sc_get_schedule", { schedule_id: "legacy-9", source: "legacy" });
+    expect(missing.isError).toBe(true);
+    expect(missing.text).toMatch(/not found/);
+  });
+
+  it("refuses pause, resume and end for legacy items without calling the current API", async () => {
+    const api = new MockApi();
+    const { call } = await connect(api, { SC_MODE: "full" });
+    for (const name of ["sc_pause_schedule", "sc_resume_schedule", "sc_end_schedule"]) {
+      const res = await call(name, { schedule_id: "legacy-1", source: "legacy" });
+      expect(res.isError).toBe(true);
+      expect(res.text).toMatch(/legacy schedule item/);
+    }
+    expect(api.calls).toHaveLength(0);
+  });
+
   it("lists current schedules plus legacy items with source labels", async () => {
     const api = new MockApi()
       .on("GET /scheduling/v1/feed/schedules", { data: [feedSchedule], metadata: {} })
@@ -75,7 +166,7 @@ describe("schedules toolset", () => {
     expect(feedCall.query).toMatchObject({ limit: "50", show_active: "true", show_paused: "true", show_finished: "true" });
     const legacyCall = api.calls.find((c) => c.path === "/schedules/v1/schedule_items")!;
     expect(legacyCall.method).toBe("GET");
-    expect(legacyCall.query).toMatchObject({ page_size: "50" });
+    expect(legacyCall.query).toMatchObject({ page_size: "49" }); // one combined page: 50 minus the 1 current row
 
     const data = json(res.text);
     expect(data.schedules).toHaveLength(2);
@@ -146,7 +237,8 @@ describe("schedules toolset", () => {
     expect(res.isError).toBe(false);
     const req = api.calls.find((c) => c.path === "/scheduling/v1/feed/schedule_occurrences")!;
     expect(req.method).toBe("GET");
-    expect(req.query).toMatchObject({ start_date: "2026-07-01T00:00:00.000Z", end_date: "2026-10-01T00:00:00.000Z" });
+    // end_date is inclusive, so the exclusive period end is sent minus 1 ms.
+    expect(req.query).toMatchObject({ start_date: "2026-07-01T00:00:00.000Z", end_date: "2026-09-30T23:59:59.999Z" });
     const data = json(res.text);
     expect(data.occurrences.map((o: { status: string }) => o.status).sort()).toEqual(["missed", "upcoming"]);
     expect(data.occurrences[0]).toMatchObject({ schedule: "sched-1", status: "missed" });

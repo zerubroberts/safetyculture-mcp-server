@@ -136,6 +136,42 @@ describe("training toolset", () => {
     expect(json(ranked.text).rankings).toEqual([{ rank: 1, participant: "Alex Demo", participant_id: "user_1", score: 95 }]);
   });
 
+  it("pages progress with a numeric offset even when the feed returns an opaque token", async () => {
+    const row = (id: string) => ({ userId: id, courseId: "course-1", courseTitle: "Demo Safety Basics", progressPercent: 50 });
+    const api = new MockApi().on("GET /training/v1/feed/training-course-progress", (req: { query: Record<string, string> }) =>
+      req.query.offset === "2"
+        ? { data: [row("user_3")], metadata: {} }
+        : { data: [row("user_1"), row("user_2")], metadata: { next_page_token: "opaque-token-abc", next_page: "/training/v1/feed/training-course-progress?next_page_token=opaque-token-abc" } },
+    );
+    const { call, json } = await connect(api);
+    const first = await call("sc_get_course_progress", { course_id: "course-1", limit: 2 });
+    expect(first.isError).toBe(false);
+    const token = json(first.text).next_page_token;
+    expect(token).toBe("2");
+
+    const second = await call("sc_get_course_progress", { course_id: "course-1", limit: 2, page_token: token });
+    expect(second.isError).toBe(false);
+    expect(api.calls[1]!.query).toMatchObject({ offset: "2", limit: "2" });
+    expect(json(second.text).rows).toHaveLength(1);
+    expect(json(second.text).next_page_token).toBeUndefined();
+  });
+
+  it("reports the full leaderboard size and pages rankings instead of silently slicing", async () => {
+    const rankings = Array.from({ length: 5 }, (_, i) => ({ rank: i + 1, participantId: `user_${i + 1}`, participantName: `Demo Person ${i + 1}`, totalScore: 100 - i }));
+    const api = new MockApi().on("GET /training/individualleaderboards/v1/rankings", { leaderboardId: "lb-1", leaderboardName: "Demo Board", rankings });
+    const { call, json } = await connect(api);
+    const first = await call("sc_training_leaderboard", { leaderboard_id: "lb-1", limit: 2 });
+    expect(first.text).toMatch(/5 ranked participants; showing 2/);
+    const p1 = json(first.text);
+    expect(p1).toMatchObject({ total: 5, truncated: true, next_page_token: "2" });
+    expect(p1.rankings.map((r: { rank: number }) => r.rank)).toEqual([1, 2]);
+
+    const last = json((await call("sc_training_leaderboard", { leaderboard_id: "lb-1", limit: 2, page_token: "4" })).text);
+    expect(last.rankings.map((r: { rank: number }) => r.rank)).toEqual([5]);
+    expect(last.truncated).toBeUndefined();
+    expect(last.next_page_token).toBeUndefined();
+  });
+
   it("hides the assign tool in read-only mode", async () => {
     const { client } = await connect(new MockApi(), { SC_MODE: "read-only" });
     const names = (await client.listTools()).tools.map((t) => t.name);
