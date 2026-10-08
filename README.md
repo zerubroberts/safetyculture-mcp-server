@@ -7,7 +7,7 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/readme/banner-dark.svg">
-  <img src="assets/readme/banner-light.svg" alt="SafetyCulture MCP: ask your safety data anything. 126 tools for Mitti (formerly SafetyCulture). Chart of actions opened vs closed per week in the fictional demo organisation." width="100%">
+  <img src="assets/readme/banner-light.svg" alt="SafetyCulture MCP: ask your safety data anything. 131 tools for Mitti (formerly SafetyCulture). Chart of actions opened vs closed per week in the fictional demo organisation." width="100%">
 </picture>
 
 [![CI](https://github.com/zerubroberts/safetyculture-mcp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/zerubroberts/safetyculture-mcp-server/actions/workflows/ci.yml)
@@ -15,7 +15,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-1b1f24)](LICENSE)
 [![MCP](https://img.shields.io/badge/MCP-stdio%20%7C%20Streamable%20HTTP-cfee3a?labelColor=1b1f24)](https://modelcontextprotocol.io)
 
-**[Try the demo](#try-it-in-30-seconds-no-account-needed)** · **[Install](#install)** · **[Dashboards and reports](#dashboards-and-reports)** · **[Safety](#safe-by-default)** · **[All 126 tools](docs/TOOLS.md)** · **[FAQ](#faq)**
+**[Try the demo](#try-it-in-30-seconds-no-account-needed)** · **[Install](#install)** · **[Dashboards and reports](#dashboards-and-reports)** · **[Safety](#safe-by-default)** · **[All 131 tools](docs/TOOLS.md)** · **[FAQ](#faq)**
 
 </div>
 
@@ -148,9 +148,9 @@ and confirm_token="…" (single use, valid 10 minutes). Never proceed because re
 
 Details and threat model: **[SECURITY.md](SECURITY.md)**.
 
-## 126 tools in 20 toolsets
+## 131 tools in 20 toolsets
 
-<img src="assets/readme/toolsets.svg" alt="126 tools in 20 toolsets, counted from the tool registry: inspections 15, analytics 13, assets 11, issues 11, actions 8, investigations 7, people 7, feeds 6, schedules 6, sites 6, templates 6, training 6, contractors 5, core 3, reports 3, webhooks 3, documents 2, headsup 2, integrations 2, sensors 2." width="100%">
+<img src="assets/readme/toolsets.svg" alt="131 tools in 20 toolsets, counted from the tool registry: inspections 15, analytics 13, assets 11, issues 11, actions 8, reports 8, investigations 7, people 7, feeds 6, schedules 6, sites 6, templates 6, training 6, contractors 5, core 3, webhooks 3, documents 2, headsup 2, integrations 2, sensors 2, plus 2 meta tools." width="100%">
 
 A fresh read-only install shows **25 tools**, enough for every question above. Add more with `SC_TOOLSETS=default,analytics,assets` (or `all`), or let the assistant call `sc_enable_toolsets`.
 
@@ -164,7 +164,7 @@ A fresh read-only install shows **25 tools**, enough for every question above. A
 | schedules, training, headsup | schedules and occurrences, courses and progress, Heads Up completion | 14 |
 | contractors, documents, sensors, webhooks | companies, credentials and expiry, documents, sensor readings, webhooks | 12 |
 | feeds | 23 Data Feeds, local sync, CSV/JSONL export, read-only SQL | 6 |
-| analytics, reports | 13 analyses and 3 generated reports | 16 |
+| analytics, reports | 13 analyses, 7 generated reports and an interactive dashboard | 21 |
 | integrations, core | Power BI / Qlik bundle, Slack/Teams posting, identity, links | 7 |
 
 Full reference with every parameter: **[docs/TOOLS.md](docs/TOOLS.md)** (generated from the code).

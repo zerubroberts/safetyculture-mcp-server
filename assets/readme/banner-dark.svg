@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="380" viewBox="0 0 1200 380" role="img" aria-labelledby="t d">
 <title id="t">SafetyCulture MCP</title>
-<desc id="d">Ask your safety data anything. 126 tools for Mitti (formerly SafetyCulture). Chart: actions opened vs closed per week for the last 12 weeks in the fictional demo organisation, 98 opened and 86 closed.</desc>
+<desc id="d">Ask your safety data anything. 131 tools for Mitti (formerly SafetyCulture). Chart: actions opened vs closed per week for the last 12 weeks in the fictional demo organisation, 98 opened and 86 closed.</desc>
 <rect width="1200" height="380" rx="18" fill="#0f1215"/>
 
 <g font-family="'Archivo', 'Segoe UI', system-ui, -apple-system, Helvetica, Arial, sans-serif">
@@ -10,7 +10,7 @@
   <text x="76" y="256" font-size="76" font-weight="800" letter-spacing="-1.5" fill="#1b1f24">MCP</text>
   <text x="282" y="246" font-size="26" font-weight="600" fill="#eef0f2">Ask your safety</text>
   <text x="282" y="278" font-size="26" font-weight="600" fill="#eef0f2">data anything.</text>
-  <text x="64" y="330" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="15" fill="#a9afb6">126 tools  ·  read-only by default  ·  reports, dashboards, BI exports  ·  demo mode</text>
+  <text x="64" y="330" font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="15" fill="#a9afb6">131 tools  ·  read-only by default  ·  reports, dashboards, BI exports  ·  demo mode</text>
 </g>
 <g font-family="'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
   <text x="760" y="92" font-size="13" fill="#a9afb6">actions per week, demo organisation</text>

@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- `sc_build_dashboard`: an interactive, self-contained HTML safety dashboard with six views (overview, inspections, actions, schedules, sites, people and templates), period and site filters, light and dark themes. Every figure comes from the analytics.
+- Four new default reports: `sc_report_monthly_board_pack`, `sc_report_action_backlog`, `sc_report_schedule_compliance`, `sc_report_inspection_quality`.
+- All reports redesigned as board-pack documents: executive summary, numbered exhibits with takeaway titles, KPI tiles with sparklines, heatmaps, dumbbells, small multiples.
+- 131 tools in total.
+
 ## 0.1.0 (2026-10-08)
 Complete rewrite of the 2025 Python prototype (6 tools) as a TypeScript MCP server.
 

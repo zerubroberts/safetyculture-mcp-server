@@ -19,6 +19,7 @@ import { feedsTools } from "./feeds.js";
 import { analyticsTools } from "./analytics.js";
 import { analyticsExtraTools } from "./analytics-extra.js";
 import { reportsTools } from "./reports.js";
+import { dashboardTools } from "./dashboards.js";
 import { integrationsTools } from "./integrations.js";
 
 /** Every tool the server knows. Selection by mode and toolset happens in core/registry.ts. */
@@ -43,5 +44,6 @@ export const ALL_TOOLS: AnyToolSpec[] = [
   ...analyticsTools,
   ...analyticsExtraTools,
   ...reportsTools,
+  ...dashboardTools,
   ...integrationsTools,
 ];

@@ -9,6 +9,8 @@ const show = JSON.parse(readFileSync("site/data/showcase.json", "utf8"));
 const pulse = show.shots.pulse.data;
 const backlog = show.shots.backlog.data;
 const OUT = "assets/readme";
+// + sc_list_toolsets and sc_enable_toolsets, registered in server.ts
+const TOTAL = toolsets.ALL_TOOLS.length + 2;
 mkdirSync(OUT, { recursive: true });
 
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -52,7 +54,7 @@ function banner(theme: "light" | "dark") {
   const totalClosed = weeks.reduce((a, w) => a + w.closed, 0);
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-labelledby="t d">
 <title id="t">SafetyCulture MCP</title>
-<desc id="d">Ask your safety data anything. 126 tools for Mitti (formerly SafetyCulture). Chart: actions opened vs closed per week for the last 12 weeks in the fictional demo organisation, ${totalOpen} opened and ${totalClosed} closed.</desc>
+<desc id="d">Ask your safety data anything. ${TOTAL} tools for Mitti (formerly SafetyCulture). Chart: actions opened vs closed per week for the last 12 weeks in the fictional demo organisation, ${totalOpen} opened and ${totalClosed} closed.</desc>
 <rect width="${W}" height="${H}" rx="18" fill="${bg}"/>
 ${theme === "light" ? `<rect x="0.5" y="0.5" width="${W - 1}" height="${H - 1}" rx="18" fill="none" stroke="${L.line}"/>` : ""}
 <g font-family="${SANS}">
@@ -62,7 +64,7 @@ ${theme === "light" ? `<rect x="0.5" y="0.5" width="${W - 1}" height="${H - 1}" 
   <text x="76" y="256" font-size="76" font-weight="800" letter-spacing="-1.5" fill="${L.ink}">MCP</text>
   <text x="282" y="246" font-size="26" font-weight="600" fill="${ink}">Ask your safety</text>
   <text x="282" y="278" font-size="26" font-weight="600" fill="${ink}">data anything.</text>
-  <text x="64" y="330" font-family="${MONO}" font-size="15" fill="${ink2}">126 tools  ·  read-only by default  ·  reports, dashboards, BI exports  ·  demo mode</text>
+  <text x="64" y="330" font-family="${MONO}" font-size="15" fill="${ink2}">${TOTAL} tools  ·  read-only by default  ·  reports, dashboards, BI exports  ·  demo mode</text>
 </g>
 <g font-family="${MONO}">
   <text x="${cx}" y="92" font-size="13" fill="${ink2}">actions per week, demo organisation</text>
@@ -146,7 +148,7 @@ ${items.map((it, i) => `<g class="e${i}">${it.svg}</g>`).join("\n")}
 );
 
 // ---------------------------------------------------------------- toolsets map
-const all = Object.values(toolsets).flat().filter((t): t is { toolset: string } => Boolean(t && typeof t === "object" && "toolset" in t));
+const all = toolsets.ALL_TOOLS;
 const counts = new Map<string, number>();
 for (const t of all) counts.set(t.toolset, (counts.get(t.toolset) ?? 0) + 1);
 const rowsT = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
