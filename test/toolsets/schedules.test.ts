@@ -307,3 +307,13 @@ describe("schedules toolset", () => {
     expect(replay.isError).toBe(true);
   });
 });
+
+import { classifyOccurrence as classifyOcc } from "../../src/toolsets/schedules.js";
+describe("occurrence classification edge cases", () => {
+  it("in-progress occurrences with an inspection id are not completed; won't-do is its own state", () => {
+    const now = new Date("2026-10-08T00:00:00Z");
+    expect(classifyOcc({ occurrence_status: "IN_PROGRESS", audit_id: "audit_1", due_time: "2026-10-09T00:00:00Z" } as never, now)).toBe("in_progress");
+    expect(classifyOcc({ occurrence_status: "WONT_DO", due_time: "2026-10-01T00:00:00Z" } as never, now)).toBe("wont_do");
+    expect(classifyOcc({ occurrence_status: "COMPLETE", audit_id: "audit_1" } as never, now)).toBe("completed");
+  });
+});

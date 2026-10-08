@@ -124,7 +124,7 @@ interface FeedOccurrence {
   assignee_id?: string;
 }
 
-export type OccurrenceStatus = "missed" | "overdue" | "late" | "completed" | "upcoming" | "open";
+export type OccurrenceStatus = "missed" | "overdue" | "late" | "completed" | "in_progress" | "wont_do" | "upcoming" | "open";
 
 /**
  * Classifies an occurrence. Prefers the API's own status text; falls back to
@@ -134,7 +134,10 @@ export type OccurrenceStatus = "missed" | "overdue" | "late" | "completed" | "up
  */
 export function classifyOccurrence(o: FeedOccurrence, now = new Date()): OccurrenceStatus {
   const raw = (o.occurrence_status ?? "").toLowerCase();
-  const done = Boolean(o.completed_at ?? o.audit_id) || raw.includes("complet");
+  // The API also sets audit_id while an inspection is IN_PROGRESS, so an inspection id alone is not "done".
+  if (raw.includes("progress")) return "in_progress";
+  if (raw.includes("won") || raw.includes("wont")) return "wont_do";
+  const done = Boolean(o.completed_at) || raw.includes("complet") || (Boolean(o.audit_id) && !raw);
   if (raw.includes("late")) return "late";
   if (raw.includes("miss")) return done ? "late" : "missed";
   if (raw.includes("overdue")) return "overdue";
