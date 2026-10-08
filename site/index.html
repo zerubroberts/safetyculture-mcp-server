@@ -20,9 +20,9 @@
     <a class="wordmark" href="#top" aria-label="SafetyCulture MCP, back to top"><span class="wordmark-dot" aria-hidden="true"></span>SafetyCulture MCP</a>
     <nav class="nav" aria-label="Primary">
       <ul>
-        <li><a href="#install">Install</a></li>
         <li><a href="#ask">What you can ask</a></li>
         <li><a href="#safety">Safety</a></li>
+        <li><a href="#install">Install</a></li>
         <li><a href="#tools">Tools</a></li>
         <li><a href="#faq">FAQ</a></li>
         <li><a class="nav-gh" href="https://github.com/zerubroberts/safetyculture-mcp-server">GitHub</a></li>
@@ -32,9 +32,9 @@
       <summary>Menu</summary>
       <nav aria-label="Primary, compact">
         <ul>
-          <li><a href="#install">Install</a></li>
           <li><a href="#ask">What you can ask</a></li>
           <li><a href="#safety">Safety</a></li>
+          <li><a href="#install">Install</a></li>
           <li><a href="#tools">Tools</a></li>
           <li><a href="#faq">FAQ</a></li>
           <li><a href="https://github.com/zerubroberts/safetyculture-mcp-server">GitHub</a></li>
@@ -57,7 +57,7 @@
         <button class="btn btn-hivis copy-btn" type="button" data-copy="npx -y safetyculture-mcp --demo doctor" aria-label="Copy the demo command">Copy</button>
       </div>
       <p class="hero-note">No account needed: <code>--demo</code> serves a full year of a fictional organisation, so every tool works without a token.</p>
-      <p class="hero-links"><a class="link-arrow" href="https://github.com/zerubroberts/safetyculture-mcp-server/blob/main/docs/guides/clients.md">Read the install guide</a></p>
+      <p class="hero-links"><a class="link-arrow" href="#install">Read the install guide</a></p>
     </div>
 
     <figure class="hero-panel">
@@ -91,7 +91,6 @@
           <ul>
             <li data-stream><span class="sev" aria-hidden="true"></span><span class="att-title">Emergency exits clear and unobstructed: fix at Hilltop Plant</span><span class="att-meta">high priority · 292 days overdue</span></li>
             <li data-stream><span class="sev" aria-hidden="true"></span><span class="att-title">Mirrors: fix at Riverside Depot</span><span class="att-meta">high priority · 272 days overdue</span></li>
-            <li data-stream><span class="sev" aria-hidden="true"></span><span class="att-title">Emergency exits clear and unobstructed: fix at Southbank Depot</span><span class="att-meta">high priority · 242 days overdue</span></li>
           </ul>
         </div>
         <p class="panel-foot" data-stream>29 failed / 486 answered items · 2 missed scheduled inspections · 11 actions created, 7 completed</p>
@@ -104,6 +103,7 @@
 <!-- WHAT YOU CAN ASK -->
 <section class="section ask" id="ask" aria-labelledby="ask-title">
   <div class="wrap">
+    <div class="ask-pin">
     <div class="section-head">
       <h2 id="ask-title">What you can ask</h2>
       <p>Plain questions in the AI app you already use. Each one is answered by a named tool that returns a plain summary plus the data behind it, the exact period and its caveats. The outputs below are real, from the demo organisation on 8 October 2026.</p>
@@ -126,15 +126,15 @@
             <p class="panel-summary">last 7 days (2026-10-02 to 2026-10-08): 37 inspections completed (previous 42, down), average score 93.6% (down), failed-item rate 5.97% of 486 answered items (up), 0 new issues, 11 actions created vs 7 completed, 40 open overdue actions, 2 missed scheduled inspections.</p>
             <div class="table-scroll">
               <table class="ptable">
-                <thead><tr><th scope="col">Metric</th><th scope="col" class="num">Last 7 days</th><th scope="col" class="num">7 days before</th><th scope="col">Direction</th></tr></thead>
+                <thead><tr><th scope="col">Metric</th><th scope="col" class="num">Last 7 days</th><th scope="col" class="num col-prev">7 days before</th><th scope="col">Direction</th></tr></thead>
                 <tbody>
-                  <tr><th scope="row">Inspections completed</th><td class="num">37</td><td class="num">42</td><td class="is-worse">down</td></tr>
-                  <tr><th scope="row">Average score</th><td class="num">93.6%</td><td class="num">94.4%</td><td class="is-worse">down</td></tr>
-                  <tr><th scope="row">Failed-item rate</th><td class="num">5.97%</td><td class="num">5.12%</td><td class="is-worse">up</td></tr>
-                  <tr><th scope="row">New issues</th><td class="num">0</td><td class="num">4</td><td class="is-dim">too few to compare</td></tr>
-                  <tr><th scope="row">Actions completed</th><td class="num">7</td><td class="num">6</td><td class="is-dim">too few to compare</td></tr>
-                  <tr><th scope="row">Missed scheduled</th><td class="num">2</td><td class="num">2</td><td class="is-dim">too few to compare</td></tr>
-                  <tr><th scope="row">Open overdue actions</th><td class="num">40</td><td class="num is-dim">n/a</td><td class="is-dim">snapshot</td></tr>
+                  <tr><th scope="row">Inspections completed</th><td class="num">37</td><td class="num col-prev">42</td><td class="is-worse">down</td></tr>
+                  <tr><th scope="row">Average score</th><td class="num">93.6%</td><td class="num col-prev">94.4%</td><td class="is-worse">down</td></tr>
+                  <tr><th scope="row">Failed-item rate</th><td class="num">5.97%</td><td class="num col-prev">5.12%</td><td class="is-worse">up</td></tr>
+                  <tr><th scope="row">New issues</th><td class="num">0</td><td class="num col-prev">4</td><td class="is-dim"><span class="dir-full">too few to compare</span><span class="dir-short" title="too few to compare">too few<span class="sr-only"> to compare</span></span></td></tr>
+                  <tr><th scope="row">Actions completed</th><td class="num">7</td><td class="num col-prev">6</td><td class="is-dim"><span class="dir-full">too few to compare</span><span class="dir-short" title="too few to compare">too few<span class="sr-only"> to compare</span></span></td></tr>
+                  <tr><th scope="row">Missed scheduled</th><td class="num">2</td><td class="num col-prev">2</td><td class="is-dim"><span class="dir-full">too few to compare</span><span class="dir-short" title="too few to compare">too few<span class="sr-only"> to compare</span></span></td></tr>
+                  <tr><th scope="row">Open overdue actions</th><td class="num">40</td><td class="num col-prev is-dim">n/a</td><td class="is-dim">snapshot</td></tr>
                 </tbody>
               </table>
             </div>
@@ -231,6 +231,7 @@
 
       </div>
       <div class="ask-progress" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+    </div>
     </div>
 
     <div class="ask-more">
@@ -474,16 +475,19 @@ docker run -d --name safetyculture-mcp -p 127.0.0.1:8787:8787 \
       <p class="fine">Formulas for all 13: <a href="https://github.com/zerubroberts/safetyculture-mcp-server/blob/main/docs/ANALYTICS.md">docs/ANALYTICS.md</a>.</p>
     </div>
     <figure class="proof">
-      <p class="proof-q">Is Eastgate Yard really worse than Northpoint Store, last 90 days?</p>
+      <p class="proof-q">Are scheduled inspections happening on time, last 30 days?</p>
+      <p class="proof-summary">51 scheduled occurrences due last 30 days (2026-09-09 to 2026-10-08): 44 on time, 2 late, 5 missed, 0 pending; compliance 86.3% of 51 resolved.</p>
+      <div class="table-scroll">
       <table class="ltable">
-        <thead><tr><th scope="col">Measure</th><th scope="col" class="num">Northpoint</th><th scope="col" class="num">Eastgate</th><th scope="col">Verdict</th></tr></thead>
+        <thead><tr><th scope="col">Schedule</th><th scope="col" class="num">Due</th><th scope="col" class="num">On time</th><th scope="col" class="num">Missed</th><th scope="col" class="num">Compliance</th></tr></thead>
         <tbody>
-          <tr><th scope="row">Failed-item rate</th><td class="num">1.28%</td><td class="num">9.2%</td><td><span class="lverdict is-real">real difference</span></td></tr>
-          <tr><th scope="row">Average score</th><td class="num">98.7%</td><td class="num">90.5%</td><td><span class="lverdict is-real">real difference</span></td></tr>
-          <tr><th scope="row">Median resolution</th><td class="num">5.3 days</td><td class="num">16.4 days</td><td><span class="lverdict">not enough data</span></td></tr>
+          <tr><th scope="row">Site Safety Walk, Harbour Warehouse</th><td class="num">4</td><td class="num">1</td><td class="num">1</td><td class="num">25%</td></tr>
+          <tr><th scope="row">Site Safety Walk, Westfield Workshop</th><td class="num">4</td><td class="num">2</td><td class="num">2</td><td class="num">50%</td></tr>
+          <tr><th scope="row">Site Safety Walk, Hilltop Plant</th><td class="num">4</td><td class="num">3</td><td class="num">1</td><td class="num">75%</td></tr>
         </tbody>
       </table>
-      <figcaption>The resolution gap looks large, but Northpoint closed one action in the period (n=1 vs n=17), so <code>sc_analyze_compare</code> declines to call it. Demo organisation.</figcaption>
+      </div>
+      <figcaption><code>sc_analyze_schedule_compliance</code> for the demo organisation. Compliance is on time share of resolved occurrences. Harbour Warehouse also has 2 late arrivals in the period.</figcaption>
     </figure>
   </div>
 </section>

@@ -59,6 +59,7 @@
     var panels = tabs.map(function (t) { return document.getElementById(t.getAttribute("aria-controls")); });
     if (!list || !tabs.length) return;
 
+    var setupDone = false;
     function select(index, focus) {
       tabs.forEach(function (tab, i) {
         var on = i === index;
@@ -67,6 +68,9 @@
         if (panels[i]) panels[i].hidden = !on;
       });
       if (focus) tabs[index].focus();
+      if (setupDone && tabs[index] && tabs[index].scrollIntoView) {
+        try { tabs[index].scrollIntoView({ inline: "nearest", block: "nearest" }); } catch (e) {}
+      }
     }
 
     tabs.forEach(function (tab, i) {
@@ -86,6 +90,7 @@
     list.hidden = false;
     root.classList.add("tabs-ready");
     select(0, false);
+    setupDone = true;
   });
 
   /* ---------- Motion ---------- */
@@ -124,6 +129,7 @@
   // "What you can ask": pinned on desktop, scroll advances through the 4 featured prompts.
   var ask = document.querySelector(".ask");
   var stage = ask && ask.querySelector(".ask-stage");
+  var pinEl = (ask && ask.querySelector(".ask-pin")) || stage;
   var items = ask ? Array.prototype.slice.call(ask.querySelectorAll(".ask-item")) : [];
   var bars = ask ? Array.prototype.slice.call(ask.querySelectorAll(".ask-progress span")) : [];
 
@@ -146,7 +152,7 @@
       setActive(0);
       var n = items.length;
       var st = ScrollTrigger.create({
-        trigger: stage,
+        trigger: pinEl,
         start: function () { return "top top+=" + document.querySelector(".site-header").offsetHeight; },
         end: function () { return "+=" + Math.round(window.innerHeight * 0.75 * n); },
         pin: true,

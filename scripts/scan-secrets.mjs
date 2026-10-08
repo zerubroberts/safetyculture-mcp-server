@@ -24,7 +24,7 @@ const PATTERNS = [
   ["private key", /-----BEGIN [A-Z ]*PRIVATE KEY-----/],
 ];
 const EMAIL = /[A-Za-z0-9._%+-]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})/g;
-const OK_EMAIL_DOMAINS = /(^|\.)(example\.(com|org|net|test)|test|invalid|localhost|users\.noreply\.github\.com|anthropic\.com)$/i;
+const OK_EMAIL_DOMAINS = /(^|\.)(example\.(com|org|net|test)|example|test|invalid|localhost|users\.noreply\.github\.com|anthropic\.com)$/i;
 const ALLOW_FILE = /^(scripts\/scan-secrets\.mjs|test\/core\/security\.test\.ts)$/;
 
 const denyPath = process.env.SC_LEAK_DENYLIST ?? join(homedir(), ".safetyculture-mcp", "denylist.txt");
