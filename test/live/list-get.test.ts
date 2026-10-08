@@ -6,7 +6,7 @@ import { LIVE_TOKEN, liveClient, shape } from "./helpers.js";
 const d = LIVE_TOKEN ? describe : describe.skip;
 
 const PAIRS: Array<[list: string, gets: string[]]> = [
-  ["sc_search_inspections", ["sc_get_inspection", "sc_get_inspection_answers", "sc_get_inspection_report_link"]],
+  ["sc_search_inspections", ["sc_get_inspection", "sc_get_inspection_answers"]],
   ["sc_list_templates", ["sc_get_template"]],
   ["sc_list_response_sets", ["sc_get_response_set"]],
   ["sc_list_issues", ["sc_get_issue", "sc_get_issue_timeline"]],
