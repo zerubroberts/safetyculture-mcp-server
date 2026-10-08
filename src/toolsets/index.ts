@@ -17,6 +17,7 @@ import { sensorsTools } from "./sensors.js";
 import { webhooksTools } from "./webhooks.js";
 import { feedsTools } from "./feeds.js";
 import { analyticsTools } from "./analytics.js";
+import { analyticsExtraTools } from "./analytics-extra.js";
 import { reportsTools } from "./reports.js";
 import { integrationsTools } from "./integrations.js";
 
@@ -40,6 +41,7 @@ export const ALL_TOOLS: AnyToolSpec[] = [
   ...webhooksTools,
   ...feedsTools,
   ...analyticsTools,
+  ...analyticsExtraTools,
   ...reportsTools,
   ...integrationsTools,
 ];
