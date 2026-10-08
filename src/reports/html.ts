@@ -1,78 +1,104 @@
-import { cellText, deltaText, edgePartial, fmt, partialNote, safeHref, type Block, type Cell, type Chart, type Column, type Report, type Tile } from "./model.js";
+import { cellText, deltaText, edgePartial, fmt, partialNote, safeHref, type Block, type Cell, type Column, type Report, type Tile } from "./model.js";
+import { NARROW, WIDE, chartSvg as chartSvgAt, sparkSvg, visualEmpty, visualSvg } from "./svg.js";
+import { BG, HIVIS, HIVIS_DEEP, INK, INK_2, LINE, PANEL, PANEL_DIM, PANEL_INK, PAPER, RISK, RISK_TINT, esc } from "./tokens.js";
 
 /**
  * Self-contained HTML: inline CSS, inline SVG, no scripts, no external requests (no fonts, images
  * or stylesheets are fetched; the only URLs are record links into the Mitti web app).
+ *
+ * Layout: a document page (A4 proportions on screen, A4 in print) with a dark cover band carrying
+ * the organisation fingerprint, period and generation time, an executive summary, then numbered
+ * sections of exhibits. Every exhibit has an action title (the takeaway) and is drawn twice, at the
+ * desktop/print width and at phone width; CSS shows the one that fits so text never scales below
+ * its design size.
  */
 
-export function esc(s: unknown): string {
-  return String(s ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
+export { esc };
+export const chartSvg = chartSvgAt;
 
-/**
- * Brand tokens from DESIGN.md (OKLCH). Text and chart ink sit at hue 250, the hi-vis accent at
- * 122/128 and risk red at 27: no indigo or purple (hue 260-300) anywhere in the output.
- */
-const INK = "oklch(0.21 0.012 250)";
-const INK_2 = "oklch(0.43 0.01 250)";
-const LINE = "oklch(0.9 0.006 250)";
-const HIVIS = "oklch(0.91 0.2 122)";
-const HIVIS_DEEP = "oklch(0.55 0.15 128)";
-const RISK = "oklch(0.58 0.19 27)";
-const PAPER = "#fff";
-const PARTIAL_OPACITY = 0.32;
+const MONO = `ui-monospace,"Cascadia Mono","SF Mono",Menlo,Consolas,monospace`;
 
 const CSS = `
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
-body{margin:0;background:${PAPER};color:${INK};font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans",sans-serif;font-size:14px;line-height:1.55}
-main{max-width:880px;margin:0 auto;padding:40px 32px 56px;background:${PAPER}}
-header{padding-bottom:20px;margin-bottom:28px;border-bottom:1px solid ${LINE}}
-.eyebrow{color:${INK_2};font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;margin:0 0 6px}
+body{margin:0;background:${BG};color:${INK};font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans",sans-serif;font-size:14px;line-height:1.55}
+main{max-width:944px;margin:32px auto 48px;background:${PAPER};border:1px solid ${LINE};border-radius:10px;overflow:hidden;box-shadow:0 1px 0 ${LINE},0 18px 40px -24px oklch(0.2 0.01 250 / 0.25)}
+.cover{background:${PANEL};color:${PANEL_INK};padding:30px 32px 26px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.cover-top{display:flex;justify-content:space-between;gap:16px;align-items:center;margin:0 0 18px}
+.eyebrow{font-family:${MONO};font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:${PANEL_DIM};margin:0}
 .eyebrow .dot{display:inline-block;width:8px;height:8px;border-radius:999px;background:${HIVIS};margin-right:8px;vertical-align:1px}
-h1{font-size:26px;line-height:1.25;margin:0 0 6px;font-weight:650;letter-spacing:-.01em}
-h1 .hl{background:${HIVIS};padding:0 .12em;box-decoration-break:clone}
-.subtitle{color:${INK_2};margin:0 0 14px}
-.meta{display:flex;flex-wrap:wrap;gap:6px 20px;margin:0;padding:0;list-style:none;color:${INK_2};font-size:12.5px}
-.meta b{color:${INK};font-weight:600}
-section{margin:0 0 36px;break-inside:avoid}
-h2{font-size:17px;margin:0 0 4px;font-weight:650;break-after:avoid}
-.intro{color:${INK_2};margin:0 0 14px}
-.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px;margin:8px 0 4px}
-.tile{border:1px solid ${LINE};border-radius:10px;padding:14px 16px;break-inside:avoid;background:${PAPER}}
-.tile .label{color:${INK_2};font-size:12.5px;margin:0 0 4px}
-.tile .value{font-size:24px;font-weight:650;font-variant-numeric:tabular-nums;margin:0}
-.tile .delta{font-size:12px;color:${INK_2};margin:4px 0 0}
-.tile .delta.better{color:${HIVIS_DEEP}}.tile .delta.worse{color:${RISK}}
-.table-wrap{overflow-x:auto;margin:6px 0 4px;break-inside:avoid}
+.brand{font-family:${MONO};font-size:12px;color:${PANEL_DIM};margin:0}
+h1{font-size:30px;line-height:1.15;margin:0 0 6px;font-weight:720;letter-spacing:-.015em;color:${PANEL_INK}}
+h1 .hl{background:${HIVIS};color:${INK};padding:0 .12em;box-decoration-break:clone;-webkit-box-decoration-break:clone}
+.subtitle{color:${PANEL_DIM};margin:0 0 20px;font-size:14.5px}
+.meta{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px 20px;margin:0;padding:16px 0 0;border-top:1px solid oklch(1 0 0 / 0.12)}
+.meta div{min-width:0}
+.meta dt{font-family:${MONO};font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:${PANEL_DIM};margin:0 0 3px}
+.meta dd{margin:0;font-family:${MONO};font-size:12.5px;color:${PANEL_INK};overflow-wrap:anywhere}
+.body{padding:28px 32px 40px}
+.exec{display:grid;grid-template-columns:150px 1fr;gap:6px 24px;padding:0 0 26px;margin:0 0 30px;border-bottom:1px solid ${LINE};break-inside:avoid}
+.exec-label{font-family:${MONO};font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:${INK_2};margin:4px 0 0}
+.exec-body{font-size:16px;line-height:1.6;margin:0;max-width:68ch;text-wrap:pretty}
+.exec-body b{font-weight:680;font-variant-numeric:tabular-nums}
+section{margin:0 0 40px;break-inside:avoid}
+.sec-head{display:flex;align-items:baseline;gap:12px;border-bottom:1px solid ${INK};padding:0 0 8px;margin:0 0 14px;break-after:avoid}
+.sec-num{font-family:${MONO};font-size:12px;color:${INK_2}}
+h2{font-size:19px;margin:0;font-weight:700;letter-spacing:-.01em;break-after:avoid}
+.intro{color:${INK_2};margin:0 0 16px;max-width:75ch}
+.tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:8px 0 18px}
+.tiles.n1{grid-template-columns:minmax(0,1fr)}.tiles.n2{grid-template-columns:repeat(2,minmax(0,1fr))}.tiles.n3{grid-template-columns:repeat(3,minmax(0,1fr))}.tiles.n5{grid-template-columns:repeat(5,minmax(0,1fr))}
+.tile{border:1px solid ${LINE};border-radius:10px;padding:14px 16px 12px;break-inside:avoid;background:${PAPER};display:flex;flex-direction:column;min-width:0}
+.tile .label{color:${INK_2};font-size:12.5px;margin:0 0 6px;line-height:1.35}
+.tile .value{font-size:28px;line-height:1.1;font-weight:700;font-variant-numeric:tabular-nums;margin:0;letter-spacing:-.01em}
+.tile .value .unit{font-size:16px;font-weight:600;color:${INK_2};margin-left:1px}
+.tile .delta{margin:8px 0 0;font-size:12px;line-height:1.35}
+.tile .vs{color:${INK_2};white-space:nowrap}
+.tile .chip{display:inline-block;white-space:nowrap;padding:2px 8px;border-radius:999px;background:oklch(0.95 0.004 250);color:${INK};font-variant-numeric:tabular-nums}
+.tile .chip.better{background:${HIVIS};color:${INK}}
+.tile .chip.worse{background:${RISK_TINT};color:${RISK}}
+.tile .note{font-size:12px;color:${INK_2};margin:8px 0 0;line-height:1.4}
+.spark-row{display:flex;align-items:center;gap:8px;margin-top:auto;padding-top:10px}
+.spark-row svg.spark{display:block;width:auto;max-width:132px;min-width:0;height:30px;flex:1 1 0}
+.spark-row span{font-size:11px;color:${INK_2};white-space:nowrap}
+.exhibit{margin:10px 0 26px;break-inside:avoid}
+.ex-num{font-family:${MONO};font-size:11.5px;letter-spacing:.05em;text-transform:uppercase;color:${INK_2};margin:0 0 3px}
+.ex-title{font-size:16.5px;line-height:1.3;font-weight:680;margin:0 0 2px;text-wrap:balance}
+.ex-sub{font-size:12.5px;color:${INK_2};margin:0 0 12px}
+.viz-w,.viz-n{margin:0}
+.viz-n{display:none}
+.ex-note,.partial-note{font-size:12px;color:${INK_2};margin:8px 0 0}
+svg{display:block;width:100%;height:auto;overflow:visible}
+.table-wrap{overflow-x:auto;margin:6px 0 6px;break-inside:avoid}
 table{width:100%;border-collapse:collapse;margin:0;font-size:13px}
-th{text-align:left;font-weight:600;color:${INK_2};font-size:12px;border-bottom:1px solid ${LINE};padding:8px 10px;white-space:nowrap}
+th{text-align:left;font-weight:600;color:${INK_2};font-size:12px;border-bottom:1px solid ${INK};padding:8px 10px;white-space:nowrap}
 td{padding:7px 10px;border-bottom:1px solid ${LINE};vertical-align:top}
+tbody tr:last-child td{border-bottom:1px solid ${INK_2}}
 .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 tr{break-inside:avoid}
-a{color:${HIVIS_DEEP};text-decoration:none}a:hover{text-decoration:underline}
-.chart{margin:8px 0 6px;break-inside:avoid}
-.chart figcaption{font-size:12.5px;color:${INK_2};margin:0 0 4px}
-.partial-note{font-size:12px;color:${INK_2};margin:6px 0 0}
-svg{display:block;width:100%;height:auto}
+a{color:${HIVIS_DEEP};text-decoration:none;font-weight:500}a:hover{text-decoration:underline}
+ol.attn{list-style:none;margin:4px 0 8px;padding:0;counter-reset:attn}
+ol.attn li{counter-increment:attn;display:grid;grid-template-columns:34px 1fr;gap:8px;padding:10px 0;border-bottom:1px solid ${LINE}}
+ol.attn li::before{content:counter(attn,decimal-leading-zero);font-family:${MONO};font-size:12px;color:${INK_2};padding-top:2px}
 ul.plain{margin:6px 0;padding-left:18px}ul.plain li{margin:3px 0}
 .empty{color:${INK_2};font-style:italic;margin:6px 0}
-.notes{color:${INK_2};font-size:12.5px;margin:10px 0 0;padding:0 0 0 18px}
-.notes-title{font-size:12px;font-weight:600;color:${INK_2};margin:12px 0 0;text-transform:uppercase;letter-spacing:.05em}
-footer{margin-top:40px;padding-top:14px;border-top:1px solid ${LINE};color:${INK_2};font-size:12px}
+.unavail{border:1px dashed ${INK_2};border-radius:10px;padding:12px 16px;margin:8px 0 14px;background:oklch(0.975 0.002 250)}
+.unavail-tag{font-family:${MONO};font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:${INK_2};margin:0 0 4px}
+.unavail p:last-child{margin:0}
+.notes{color:${INK_2};font-size:12.5px;margin:8px 0 0;padding:0 0 0 18px}
+.notes-title{font-family:${MONO};font-size:11.5px;color:${INK_2};margin:14px 0 0;text-transform:uppercase;letter-spacing:.06em}
+footer{margin:0 32px;padding:14px 0 24px;border-top:1px solid ${LINE};color:${INK_2};font-size:12px}
 @page{size:A4;margin:14mm}
-@media print{body{background:${PAPER};font-size:12px}main{max-width:none;padding:0}section{break-inside:avoid}tr{break-inside:avoid}.tile,.chart,.table-wrap{break-inside:avoid}h2{break-after:avoid}a{color:${INK};text-decoration:none}.table-wrap{overflow:visible}}
-@media (max-width:480px){main{padding:24px 16px 40px}h1{font-size:22px}.tiles{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}th,td{padding:6px 8px}.meta{gap:4px 14px}}
+@media print{body{background:${PAPER};font-size:12px}main{max-width:none;margin:0;border:0;border-radius:0;box-shadow:none;overflow:visible}.cover{padding:22px 24px}.body{padding:22px 0 0}footer{margin:0}section{break-inside:auto}.exhibit,.tile,.tiles,.chart,.table-wrap,.unavail,.exec{break-inside:avoid}tr{break-inside:avoid}h2,.sec-head,.ex-title{break-after:avoid}.viz-w{display:block}.viz-n{display:none}a{color:${INK};text-decoration:none}.table-wrap{overflow:visible}}
+@media (max-width:980px){main{margin:0;border:0;border-radius:0}}
+@media (max-width:760px){.tiles,.tiles.n3,.tiles.n5{grid-template-columns:repeat(2,minmax(0,1fr))}.meta{grid-template-columns:repeat(2,minmax(0,1fr))}.exec{grid-template-columns:1fr}}
+@media (max-width:640px){.viz-w{display:none}.viz-n{display:block}}
+@media (max-width:480px){.cover{padding:22px 16px 20px}.body{padding:22px 16px 32px}footer{margin:0 16px}h1{font-size:24px}.tile{padding:12px}.tile .value{font-size:24px}.tiles{gap:10px}th,td{padding:6px 8px}.exec-body{font-size:15px}}
 `;
 
 function cellHtml(c: Cell, col?: Column): string {
   const cls = col?.align === "right" || typeof c === "number" ? ' class="num"' : "";
   if (c && typeof c === "object") {
+    if (!("text" in c)) return `<td${cls}>${esc(c.label)}</td>`;
     const href = safeHref(c.href);
     return `<td${cls}>${href ? `<a href="${esc(href)}">${esc(c.text)}</a>` : esc(c.text)}</td>`;
   }
@@ -81,93 +107,52 @@ function cellHtml(c: Cell, col?: Column): string {
 
 function tileHtml(t: Tile): string {
   const d = deltaText(t);
-  const cls = t.delta && t.good ? ((t.delta > 0) === (t.good === "up") ? " better" : " worse") : "";
-  return `<div class="tile"><p class="label">${esc(t.label)}</p><p class="value">${esc(fmt(t.value, t.unit ?? ""))}</p>${d ? `<p class="delta${cls}">${esc(d)}</p>` : ""}</div>`;
+  const verdict = t.delta && t.good ? ((t.delta > 0) === (t.good === "up") ? "better" : "worse") : "";
+  const hasDelta = t.delta !== undefined && t.delta !== null;
+  const arrow = hasDelta ? (t.delta! > 0 ? "▲ " : t.delta! < 0 ? "▼ " : "") : "";
+  const value = t.value === null || t.value === undefined ? "n/a" : fmt(t.value);
+  const unit = t.value === null || t.value === undefined ? "" : (t.unit ?? "");
+  // Chip = arrow, signed change and the verdict word; "vs previous" sits beside it in gray, so the chip never wraps.
+  const [chip, vs] = hasDelta ? (d.split(" vs previous") as [string, string?]) : [d, undefined];
+  const deltaHtml = !d
+    ? ""
+    : hasDelta
+      ? `<p class="delta"><span class="chip${verdict ? ` ${verdict}` : ""}">${esc(arrow + chip)}</span> <span class="vs">vs previous${esc(vs ?? "")}</span></p>`
+      : `<p class="note">${esc(d)}</p>`;
+  const spark = t.spark ? sparkSvg(t.spark, t.sparkPartial) : "";
+  return `<div class="tile"><p class="label">${esc(t.label)}</p><p class="value">${esc(value)}${unit ? `<span class="unit">${esc(unit)}</span>` : ""}</p>${deltaHtml}${spark ? `<div class="spark-row">${spark}${t.sparkLabel ? `<span>${esc(t.sparkLabel)}</span>` : ""}</div>` : ""}</div>`;
 }
 
-/** Rounds an axis maximum up to 1, 2, 2.5 or 5 x 10^k. */
-function niceMax(v: number): number {
-  if (!(v > 0)) return 1;
-  const p = 10 ** Math.floor(Math.log10(v));
-  for (const m of [1, 2, 2.5, 5, 10]) if (m * p >= v) return m * p;
-  return 10 * p;
+/** Wraps numbers in <b> so the executive summary scans; text is escaped piecewise. */
+function emphNumbers(s: string): string {
+  return s
+    .split(/(\d[\d,]*(?:\.\d+)?%?)/)
+    .map((part, i) => (i % 2 ? `<b>${esc(part)}</b>` : esc(part)))
+    .join("");
 }
 
-export function chartSvg(c: Chart): string {
-  const W = 680;
-  const H = 240;
-  const L = 56;
-  const R = c.kind === "pareto" ? 48 : 16;
-  const T = 14;
-  const B = 52;
-  const pw = W - L - R;
-  const ph = H - T - B;
-  const vals = c.points.map((p) => p.value).filter((v): v is number => v !== null && Number.isFinite(v));
-  const yMax = c.yMax ?? niceMax(Math.max(0, ...vals));
-  const n = Math.max(1, c.points.length);
-  const step = pw / n;
-  const x = (i: number) => L + step * i + step / 2;
-  const y = (v: number) => T + ph - (Math.max(0, v) / yMax) * ph;
-  const parts: string[] = [];
-  const unit = c.unit ?? "";
-
-  for (let k = 0; k <= 4; k++) {
-    const v = (yMax * k) / 4;
-    const yy = y(v).toFixed(1);
-    parts.push(`<line x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}" stroke="${k === 0 ? INK_2 : LINE}"/>`);
-    parts.push(`<text x="${L - 6}" y="${yy}" dy="4" text-anchor="end" font-size="11" fill="${INK_2}">${esc(fmt(Math.round(v * 10) / 10))}${esc(unit)}</text>`);
-  }
-  const every = Math.ceil(n / 12);
-  c.points.forEach((p, i) => {
-    if (i % every === 0) parts.push(`<text x="${x(i).toFixed(1)}" y="${T + ph + 16}" text-anchor="middle" font-size="10.5" fill="${INK_2}">${esc(p.label)}${p.partial ? "\u2020" : ""}</text>`);
-  });
-
-  if (c.kind === "bar" || c.kind === "pareto") {
-    const bw = Math.max(2, step * 0.62);
-    c.points.forEach((p, i) => {
-      if (p.value === null) return;
-      const top = y(p.value);
-      const partial = p.partial === true;
-      const opacity = partial ? PARTIAL_OPACITY : c.kind === "pareto" ? 0.85 : 1;
-      parts.push(`<rect x="${(x(i) - bw / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${bw.toFixed(1)}" height="${(T + ph - top).toFixed(1)}" rx="2" fill="${INK}" opacity="${opacity}"><title>${esc(p.label)}: ${esc(fmt(p.value, unit))}${partial ? " (partial)" : ""}</title></rect>`);
-    });
-  }
-  if (c.kind === "line") {
-    let d = "";
-    let pen = false;
-    c.points.forEach((p, i) => {
-      if (p.value === null) {
-        pen = false;
-        return;
-      }
-      d += `${pen ? "L" : "M"}${x(i).toFixed(1)} ${y(p.value).toFixed(1)} `;
-      pen = true;
-    });
-    if (d) parts.push(`<path d="${d.trim()}" fill="none" stroke="${INK}" stroke-width="2"/>`);
-    c.points.forEach((p, i) => {
-      if (p.value !== null) parts.push(`<circle cx="${x(i).toFixed(1)}" cy="${y(p.value).toFixed(1)}" r="3" fill="#fff" stroke="${INK}" stroke-width="2"><title>${esc(p.label)}: ${esc(fmt(p.value, unit))}</title></circle>`);
-    });
-  }
-  if (c.kind === "pareto" && c.cumulative?.length) {
-    const yc = (v: number) => T + ph - (Math.min(100, Math.max(0, v)) / 100) * ph;
-    const d = c.cumulative.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)} ${yc(v).toFixed(1)}`).join(" ");
-    parts.push(`<path d="${d}" fill="none" stroke="${INK_2}" stroke-width="1.5" stroke-dasharray="4 3"/>`);
-    for (const k of [0, 50, 100]) parts.push(`<text x="${W - R + 6}" y="${yc(k).toFixed(1)}" dy="4" font-size="11" fill="${INK_2}">${k}%</text>`);
-    parts.push(`<text transform="translate(${W - 8} ${T + ph / 2}) rotate(90)" text-anchor="middle" font-size="11" fill="${INK_2}">Cumulative share</text>`);
-  }
-  parts.push(`<text x="${L + pw / 2}" y="${H - 8}" text-anchor="middle" font-size="11.5" fill="${INK_2}">${esc(c.xLabel)}</text>`);
-  parts.push(`<text transform="translate(14 ${T + ph / 2}) rotate(-90)" text-anchor="middle" font-size="11.5" fill="${INK_2}">${esc(c.yLabel)}</text>`);
-  if (!vals.length) parts.push(`<text x="${L + pw / 2}" y="${T + ph / 2}" text-anchor="middle" font-size="12" fill="${INK_2}">No data in this period</text>`);
-  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(c.title)}" font-family="inherit"><title>${esc(c.title)}</title>${parts.join("")}</svg>`;
+function exhibit(n: number, title: string, subtitle: string | undefined, wide: string, narrow: string, note: string): string {
+  return `<figure class="exhibit"><figcaption><p class="ex-num">Exhibit ${n}</p><h3 class="ex-title">${esc(title)}</h3>${subtitle ? `<p class="ex-sub">${esc(subtitle)}</p>` : ""}</figcaption><div class="viz-w">${wide}</div><div class="viz-n">${narrow}</div>${note}</figure>`;
 }
 
-function blockHtml(b: Block): string {
+function blockHtml(b: Block, next: () => number): string {
   switch (b.kind) {
     case "kpis":
-      return `<div class="tiles">${b.tiles.map(tileHtml).join("")}</div>`;
+      return `<div class="tiles n${b.tiles.length <= 5 ? b.tiles.length : b.tiles.length === 6 ? 3 : 4}">${b.tiles.map(tileHtml).join("")}</div>`;
     case "chart": {
       const note = edgePartial(b.chart.points) ? `<p class="partial-note">${esc(partialNote(b.chart.xLabel))}</p>` : "";
-      return `<figure class="chart"><figcaption>${esc(b.chart.title)}</figcaption>${chartSvg(b.chart)}${note}</figure>`;
+      return exhibit(next(), b.chart.title, b.chart.subtitle, chartSvgAt(b.chart, WIDE), chartSvgAt(b.chart, NARROW), note);
+    }
+    case "bars":
+    case "stacked":
+    case "dumbbell":
+    case "heatmap":
+    case "multiples":
+    case "bullets": {
+      if (visualEmpty(b)) return `<p class="empty">${esc(("empty" in b && b.empty) || "Nothing to show.")}</p>`;
+      const partial = (b.kind === "heatmap" || b.kind === "multiples") && b.partial?.some(Boolean) ? partialNote(b.kind === "heatmap" ? "week" : "bucket") : "";
+      const notes = [b.note, partial].filter(Boolean).map((t) => `<p class="ex-note">${esc(t)}</p>`).join("");
+      return exhibit(next(), b.title, b.subtitle, visualSvg(b, WIDE), visualSvg(b, NARROW), notes);
     }
     case "table":
       if (!b.rows.length) return `<p class="empty">${esc(b.empty ?? "Nothing to show.")}</p>`;
@@ -176,21 +161,23 @@ function blockHtml(b: Block): string {
         .join("")}</tbody></table></div>`;
     case "text":
       return `<p>${esc(b.text)}</p>`;
+    case "unavailable":
+      return `<div class="unavail"><p class="unavail-tag">Not available</p><p>${esc(b.text)}</p></div>`;
     case "list":
       if (!b.items.length) return `<p class="empty">${esc(b.empty ?? "Nothing to show.")}</p>`;
-      return `<ul class="plain">${b.items
+      return `<ol class="attn">${b.items
         .map((i) => {
           const href = safeHref(i.href);
-          return `<li>${esc(i.text)}${href ? ` <a href="${esc(href)}">Open</a>` : ""}</li>`;
+          return `<li><span>${esc(i.text)}${href ? ` <a href="${esc(href)}">Open</a>` : ""}</span></li>`;
         })
-        .join("")}</ul>`;
+        .join("")}</ol>`;
     case "notes":
       if (!b.items.length) return "";
       return `${b.title ? `<p class="notes-title">${esc(b.title)}</p>` : ""}<ul class="notes">${b.items.map((n) => `<li>${esc(n)}</li>`).join("")}</ul>`;
   }
 }
 
-/** First word carries the hi-vis marker; the rest stays plain ink. */
+/** First word carries the hi-vis marker; the rest stays plain. */
 function titleHtml(title: string): string {
   const words = title.split(" ");
   const first = words.shift() ?? "";
@@ -199,9 +186,17 @@ function titleHtml(title: string): string {
 }
 
 export function renderHtml(r: Report): string {
+  let n = 0;
+  const next = () => ++n;
   const sections = r.sections
-    .map((s) => `<section><h2>${esc(s.title)}</h2>${s.intro ? `<p class="intro">${esc(s.intro)}</p>` : ""}${s.blocks.map(blockHtml).join("")}</section>`)
+    .map(
+      (s, i) =>
+        `<section><div class="sec-head"><span class="sec-num">${String(i + 1).padStart(2, "0")}</span><h2>${esc(s.title)}</h2></div>${s.intro ? `<p class="intro">${esc(s.intro)}</p>` : ""}${s.blocks.map((b) => blockHtml(b, next)).join("")}</section>`,
+    )
     .join("\n");
+  const summary = r.summary?.length
+    ? `<section class="exec"><p class="exec-label">Executive summary</p><p class="exec-body">${r.summary.map(emphNumbers).join(" ")}</p></section>`
+    : "";
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -213,19 +208,22 @@ export function renderHtml(r: Report): string {
 </head>
 <body>
 <main>
-<header>
-<p class="eyebrow"><span class="dot" aria-hidden="true"></span>Safety report</p>
+<header class="cover">
+<div class="cover-top"><p class="eyebrow"><span class="dot" aria-hidden="true"></span>${esc(r.kind ?? "Safety report")}</p><p class="brand">safetyculture-mcp</p></div>
 <h1>${titleHtml(r.title)}</h1>
 ${r.subtitle ? `<p class="subtitle">${esc(r.subtitle)}</p>` : ""}
-<ul class="meta">
-<li>Organisation <b>${esc(r.fingerprint)}</b></li>
-<li>Period <b>${esc(r.periodLabel)}</b></li>
-<li>Generated <b>${esc(r.generatedAt)}</b></li>
-<li>Data from Mitti via safetyculture-mcp</li>
-</ul>
+<dl class="meta">
+<div><dt>Organisation</dt><dd>${esc(r.fingerprint)}</dd></div>
+<div><dt>Period</dt><dd>${esc(r.periodLabel)}</dd></div>
+<div><dt>Generated</dt><dd>${esc(r.generatedAt)}</dd></div>
+<div><dt>Source</dt><dd>Data from Mitti via safetyculture-mcp</dd></div>
+</dl>
 </header>
+<div class="body">
+${summary}
 ${sections}
-<footer>Computed locally from cached Mitti Data Feeds by safetyculture-mcp. Organisation shown as a fingerprint, not a name. Figures reflect the cache at generation time; see the data coverage notes.</footer>
+</div>
+<footer>Computed locally from cached Mitti Data Feeds by safetyculture-mcp. Organisation shown as a fingerprint, not a name. Figures reflect the cache at generation time; see the data coverage notes. Independent open-source project, not affiliated with SafetyCulture Pty Ltd or Mitti.</footer>
 </main>
 </body>
 </html>

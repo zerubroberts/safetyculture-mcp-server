@@ -3,7 +3,12 @@
  * files always carry the same numbers. All strings are plain text here: renderers escape them.
  */
 
-export type Cell = string | number | null | undefined | { text: string; href?: string };
+/**
+ * A person's name in a table (assignee, inspector). The `group_kind: "person"` marker makes the report
+ * sanitiser pseudonymise `label` at SC_PII=strict, the same rule the analytics rows follow.
+ */
+export type PersonCell = { label: string; group_kind: "person" };
+export type Cell = string | number | null | undefined | { text: string; href?: string } | PersonCell;
 
 export interface Column {
   label: string;
@@ -22,6 +27,12 @@ export interface Tile {
   note?: string;
   /** Which direction is good, so the delta can say "better" or "worse". */
   good?: "up" | "down";
+  /** Recent shape of the same metric (oldest first), drawn as a sparkline. Values come from the trend analytic. */
+  spark?: Array<number | null>;
+  /** Per spark point: true when its bucket is cut short by the period edge (drawn hollow). */
+  sparkPartial?: boolean[];
+  /** Caption beside the sparkline, e.g. "last 12 weeks". */
+  sparkLabel?: string;
 }
 
 export interface ChartPoint {
@@ -33,6 +44,7 @@ export interface ChartPoint {
 
 export interface Chart {
   kind: "bar" | "line" | "pareto";
+  /** Action title: states the takeaway. */
   title: string;
   xLabel: string;
   yLabel: string;
@@ -42,6 +54,62 @@ export interface Chart {
   unit?: string;
   /** Fix the y axis maximum (e.g. 100 for percentages). */
   yMax?: number;
+  /** Line under the action title: what is measured, unit and period. */
+  subtitle?: string;
+  /** Bar charts: the one bar drawn in ink; the others go gray. */
+  highlight?: number;
+  /** Line charts: event markers (a dashed rule with a short label) at point indexes. */
+  markers?: Array<{ index: number; label: string }>;
+  /** Horizontal reference line, e.g. the period mean. */
+  reference?: { value: number; label: string };
+  /** Label of the main series, printed at its end when a second series is drawn. */
+  seriesLabel?: string;
+  /** Line charts: a gray comparison series on the same scale, labelled at its end. */
+  series2?: { label: string; values: Array<number | null> };
+}
+
+/** One row of a sorted horizontal bar exhibit. */
+export interface BarRow {
+  label: string;
+  value: number | null;
+  /** Short context after the value, e.g. "of 40 open". */
+  note?: string;
+  /** "person" when the label is a person's name (pseudonymised at strict privacy). */
+  group_kind?: "person";
+}
+
+/** Segment colours: status colours (ok/warn/risk) are always paired with a legend label. */
+export type Tone = "ok" | "warn" | "risk" | "ink" | "mid" | "soft" | "pale";
+
+/** Exhibit header shared by the visual blocks: an action title that states the takeaway, plus the measure. */
+export interface Exhibit {
+  title: string;
+  subtitle?: string;
+  /** Footnote under the exhibit. */
+  note?: string;
+}
+
+export interface StackedRow {
+  label: string;
+  values: number[];
+  group_kind?: "person";
+}
+
+export interface DumbbellRow {
+  label: string;
+  from: number | null;
+  to: number | null;
+  group_kind?: "person";
+}
+
+export interface BulletRow {
+  label: string;
+  value: number | null;
+  compare: number | null;
+  unit?: string;
+  max: number;
+  good?: "up" | "down";
+  note?: string;
 }
 
 export type Block =
@@ -50,7 +118,39 @@ export type Block =
   | { kind: "table"; columns: Column[]; rows: Cell[][]; empty?: string }
   | { kind: "text"; text: string }
   | { kind: "list"; items: Array<{ text: string; href?: string }>; empty?: string }
-  | { kind: "notes"; title?: string; items: string[] };
+  | { kind: "notes"; title?: string; items: string[] }
+  /** Figures withheld because a feed cannot be read: the reason, never a zero. */
+  | { kind: "unavailable"; text: string }
+  /** Sorted horizontal bars with one highlighted (index, default 0; -1 for none). Rows arrive sorted. */
+  | (Exhibit & { kind: "bars"; rows: BarRow[]; valueLabel: string; unit?: string; highlight?: number; empty?: string })
+  /** Stacked horizontal bars (status mix). `percent` normalises each row to 100% and prints the row total. */
+  | (Exhibit & { kind: "stacked"; segments: Array<{ label: string; tone: Tone }>; rows: StackedRow[]; percent?: boolean; empty?: string })
+  /** Two values per entity: previous and current, or expected and actual. */
+  | (Exhibit & { kind: "dumbbell"; fromLabel: string; toLabel: string; unit?: string; good?: "up" | "down"; rows: DumbbellRow[]; empty?: string })
+  /** Entity x period matrix. Colour = intensity; with `good`, a darker cell is a worse one. */
+  | (Exhibit & {
+      kind: "heatmap";
+      rowHeader: string;
+      columns: string[];
+      partial?: boolean[];
+      rows: Array<{ label: string; values: Array<number | null> }>;
+      unit?: string;
+      good?: "up" | "down";
+      max?: number;
+      empty?: string;
+    })
+  /** Small multiples: one mini line per entity on a shared scale. */
+  | (Exhibit & {
+      kind: "multiples";
+      xLabels: string[];
+      partial?: boolean[];
+      panels: Array<{ label: string; values: Array<number | null>; highlight?: boolean }>;
+      unit?: string;
+      yMax?: number;
+      empty?: string;
+    })
+  /** Bullet bars: a value against a comparison marker (previous period) on a fixed scale. */
+  | (Exhibit & { kind: "bullets"; compareLabel: string; rows: BulletRow[] });
 
 export interface Section {
   title: string;
@@ -64,6 +164,10 @@ export interface Report {
   fingerprint: string;
   periodLabel: string;
   generatedAt: string;
+  /** Short label for the cover band, e.g. "Monthly board pack". */
+  kind?: string;
+  /** Executive summary: deterministic sentences built from analytics outputs (no invented numbers). */
+  summary?: string[];
   sections: Section[];
 }
 
@@ -81,6 +185,15 @@ export function fmtInstant(input: Date | string): string {
   return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}, ${p2(d.getUTCHours())}:${p2(d.getUTCMinutes())} UTC`;
 }
 
+/** Short axis label for a trend bucket: "2026-07-13" -> "13 Jul", "2026-07" -> "Jul 26". Anything else passes through. */
+export function shortBucket(label: string): string {
+  let m = label.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) return `${Number(m[3])} ${MONTHS[Number(m[2]) - 1] ?? m[2]}`;
+  m = label.match(/^(\d{4})-(\d{2})$/);
+  if (m) return `${MONTHS[Number(m[2]) - 1] ?? m[2]} ${m[1]!.slice(2)}`;
+  return label;
+}
+
 /** True when the first or last point only partly overlaps the period. */
 export function edgePartial(points: Array<{ partial?: boolean }>): boolean {
   return points.length > 0 && (points[0]?.partial === true || points[points.length - 1]?.partial === true);
@@ -90,7 +203,7 @@ const partialWord = (xLabel: string): string => (/week/i.test(xLabel) ? "week" :
 
 /** Footnote for charts with partial edge buckets. Weekly charts always carry the words "partial week". */
 export function partialNote(xLabel: string): string {
-  return `\u2020 partial ${partialWord(xLabel)}: the first or last bucket covers fewer days, so its count reads lower for that reason alone.`;
+  return `† partial ${partialWord(xLabel)}: the first or last bucket covers fewer days, so its count reads lower for that reason alone.`;
 }
 
 /** Deterministic number formatting: thousands separators, fixed decimals as computed. */
@@ -105,7 +218,7 @@ export function cellText(c: Cell): string {
   if (c === null || c === undefined) return "";
   if (typeof c === "number") return fmt(c);
   if (typeof c === "string") return c;
-  return c.text;
+  return "text" in c ? c.text : c.label;
 }
 
 export function deltaText(t: Tile): string {
@@ -115,4 +228,11 @@ export function deltaText(t: Tile): string {
   const sign = t.delta > 0 ? "+" : "";
   const judged = t.delta === 0 || !t.good ? "" : (t.delta > 0) === (t.good === "up") ? " (better)" : " (worse)";
   return `${sign}${fmt(t.delta)}${unit} vs previous${judged}`;
+}
+
+/** "better" / "worse" / "same" / null (no judgement possible) for a change from `a` to `b`. */
+export function judge(a: number | null, b: number | null, good?: "up" | "down"): "better" | "worse" | "same" | null {
+  if (a === null || b === null || !good) return null;
+  if (a === b) return "same";
+  return (b > a) === (good === "up") ? "better" : "worse";
 }

@@ -5,6 +5,7 @@ import { defineTool, keyFor, type AnyToolSpec, type ToolResult } from "../core/r
 import type { PiiLevel } from "../core/config.js";
 import { pseudonym, sanitize } from "../security/redact.js";
 import { buildAuditPack, buildSafetyPulse, buildSiteScorecard, type Built } from "../reports/build.js";
+import { buildActionBacklog, buildInspectionQuality, buildMonthlyBoardPack, buildScheduleCompliance } from "../reports/build-more.js";
 import { writeReport } from "../reports/write.js";
 
 // Toolset "reports": self-contained HTML reports (inline CSS and SVG, no scripts, no external
@@ -82,6 +83,86 @@ export const reportsTools: AnyToolSpec[] = [
       const person = ctx.config.pii === "strict" ? (n: string) => pseudonym(n, "person", keyFor(ctx.config)) : undefined;
       const built = buildSiteScorecard(cache, { site_id: a.site_id, period: a.period }, now, { person });
       return finish(built, ctx.config.exportDir, "site-scorecard", now, ctx.config.pii, keyFor(ctx.config));
+    },
+  }),
+
+  defineTool({
+    name: "sc_report_monthly_board_pack",
+    title: "Monthly board pack",
+    toolset: "reports",
+    access: "read",
+    localWrite: true,
+    description:
+      "Writes a monthly board pack (HTML and Markdown) for the last full month by default: executive summary, KPI tiles with 12-month sparklines, attention list, volume and score trends, site league with previous-period comparison, per-site trends, action backlog and scheduled-inspection compliance.",
+    input: {
+      period: P.period("last month"),
+      site_ids: P.siteIds,
+    },
+    run: async (a, ctx) => {
+      const now = ctx.now();
+      const cache = await ctx.cache.ensure(REPORT_FEEDS);
+      const built = buildMonthlyBoardPack(cache, { period: a.period, site_ids: a.site_ids }, now);
+      return finish(built, ctx.config.exportDir, "monthly-board-pack", now, ctx.config.pii, keyFor(ctx.config));
+    },
+  }),
+
+  defineTool({
+    name: "sc_report_action_backlog",
+    title: "Action backlog report",
+    toolset: "reports",
+    access: "read",
+    localWrite: true,
+    description:
+      "Writes an action backlog report (HTML and Markdown): open and overdue counts, ageing, weekly closure trend, overdue actions by site, priority and assignee, and the oldest open items. Assignee names are pseudonymised when SC_PII=strict.",
+    input: {
+      period: P.period("last 90 days"),
+      site_ids: P.siteIds,
+    },
+    run: async (a, ctx) => {
+      const now = ctx.now();
+      const cache = await ctx.cache.ensure(["actions", "action_assignees", "sites", "users"]);
+      const built = buildActionBacklog(cache, { period: a.period, site_ids: a.site_ids }, now);
+      return finish(built, ctx.config.exportDir, "action-backlog", now, ctx.config.pii, keyFor(ctx.config));
+    },
+  }),
+
+  defineTool({
+    name: "sc_report_schedule_compliance",
+    title: "Schedule compliance report",
+    toolset: "reports",
+    access: "read",
+    localWrite: true,
+    description:
+      "Writes a scheduled-inspection compliance report (HTML and Markdown): on-time, late and missed by week, comparison with the previous period, the least reliable schedules and sites, and a site-by-week heatmap.",
+    input: {
+      period: P.period("last 12 weeks"),
+      site_ids: P.siteIds,
+    },
+    run: async (a, ctx) => {
+      const now = ctx.now();
+      const cache = await ctx.cache.ensure(["schedule_occurrences", "schedules", "schedule_assignees", "inspections", "sites", "templates", "users"]);
+      const built = buildScheduleCompliance(cache, { period: a.period, site_ids: a.site_ids }, now);
+      return finish(built, ctx.config.exportDir, "schedule-compliance", now, ctx.config.pii, keyFor(ctx.config));
+    },
+  }),
+
+  defineTool({
+    name: "sc_report_inspection_quality",
+    title: "Inspection quality report",
+    toolset: "reports",
+    access: "read",
+    localWrite: true,
+    description:
+      "Writes an inspection quality report (HTML and Markdown): failed-item Pareto, failures by template, template hygiene (questions to cut or fix) and inspector activity against the same-template average. Inspector names are pseudonymised when SC_PII=strict.",
+    input: {
+      period: P.period("last 90 days"),
+      site_ids: P.siteIds,
+    },
+    run: async (a, ctx) => {
+      const now = ctx.now();
+      const cache = await ctx.cache.ensure(["inspections", "inspection_items", "templates", "users", "sites"]);
+      const built = buildInspectionQuality(cache, { period: a.period, site_ids: a.site_ids }, now);
+      return finish(built, ctx.config.exportDir, "inspection-quality", now, ctx.config.pii, keyFor(ctx.config));
     },
   }),
 ];
