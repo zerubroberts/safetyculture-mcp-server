@@ -85,3 +85,10 @@ describe("confirm token hardening", () => {
     expect(b.verify("sc_delete_actions", { ids: ["x"] }, t)).toBe(false);
   });
 });
+
+describe("period labels survive masking", () => {
+  it("keeps (2026-10-02 to 2026-10-08)", () => {
+    expect(sanitize({ s: "last 7 days (2026-10-02 to 2026-10-08)" }, "contact").s).toBe("last 7 days (2026-10-02 to 2026-10-08)");
+    expect(sanitize({ s: "ring (03) 9123 4567" }, "contact").s).toBe("ring [phone]");
+  });
+});

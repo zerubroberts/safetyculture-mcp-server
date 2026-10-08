@@ -82,7 +82,9 @@ export function pseudonym(value: string, kind: string, key: Buffer = pseudonymKe
  * Free-text phone detection is deliberately conservative: dates, timestamps, plain numeric IDs
  * and decimals must survive. Phone *fields* are masked by key name regardless (see CONTACT_KEYS).
  */
-function looksLikePhone(m: string): boolean {
+function looksLikePhone(raw: string): boolean {
+  const m = raw.replace(/^\(/, "");
+  if (/^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}/.test(m) && !raw.startsWith("+")) return false; // ISO dates, even after "("
   const digits = m.replace(/\D/g, "");
   if (digits.length < 8 || digits.length > 15) return false;
   if (/^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}/.test(m) || /^\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}/.test(m)) return false; // dates
