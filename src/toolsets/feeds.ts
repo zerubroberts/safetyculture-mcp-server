@@ -6,7 +6,7 @@ import { QUERY_ROW_CAP, runReadOnlyQuery } from "../cache/query.js";
 import { DEFAULT_MAX_ROWS } from "../cache/sync.js";
 import { ToolError } from "../core/errors.js";
 import { P } from "../core/params.js";
-import { defineTool, type AnyToolSpec } from "../core/registry.js";
+import { defineTool, type AnyToolSpec, keyFor } from "../core/registry.js";
 import { parsePeriod } from "../core/time.js";
 import { filterRows, safeStem, timestampSlug, writeDataset } from "../exports/dataset.js";
 
@@ -222,7 +222,7 @@ export const feedsTools: AnyToolSpec[] = [
       const dateField = args.date_field ?? FEEDS[feed].modifiedField ?? "created_at";
       const rows = filterRows(cache.rows(feed), { period, dateField, siteIds: args.site_ids, templateIds: args.template_ids });
       const stem = args.file_name ? safeStem(args.file_name) : `${feed}-${timestampSlug(now)}`;
-      const out = writeDataset({ dir: ctx.config.exportDir, stem, format: args.format ?? "csv", rows, pii: ctx.config.pii, columns: args.columns });
+      const out = writeDataset({ dir: ctx.config.exportDir, stem, format: args.format ?? "csv", rows, pii: ctx.config.pii, key: keyFor(ctx.config), columns: args.columns });
       const caveat = status.complete ? "" : " The cached feed is partial (row cap), so the file may be incomplete.";
       return {
         summary: `Exported ${out.rows} ${feed} rows to ${out.path}.${caveat}`,
@@ -251,8 +251,8 @@ export const feedsTools: AnyToolSpec[] = [
       const store = asSqlite(await ctx.cache.open());
       const res = await runReadOnlyQuery(store.path, sql, { rowCap: limit ?? QUERY_ROW_CAP });
       return {
-        summary: `${res.rows.length} rows${res.truncated ? ` (capped at ${res.rows.length}; add LIMIT or aggregate)` : ""} in ${res.duration_ms} ms.`,
-        data: { columns: res.columns, rows: res.rows, truncated: res.truncated },
+        summary: `${res.rows.length} rows${res.truncated ? ` (cut short by the ${res.truncated_reason === "bytes" ? "size" : "row"} cap; add LIMIT, select fewer columns or aggregate)` : ""} in ${res.duration_ms} ms.`,
+        data: { columns: res.columns, rows: res.rows, truncated: res.truncated, truncated_reason: res.truncated_reason },
         untrusted: true,
       };
     },

@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { z } from "zod";
 import { ToolError } from "../core/errors.js";
-import { defineTool, type AnyToolSpec } from "../core/registry.js";
+import { defineTool, type AnyToolSpec, keyFor } from "../core/registry.js";
 import { parsePeriod } from "../core/time.js";
 import { BUNDLE_FEEDS, writeBiBundle } from "../exports/bi-bundle.js";
 import { safeStem, timestampSlug } from "../exports/dataset.js";
@@ -109,7 +109,7 @@ export const integrationsTools: AnyToolSpec[] = [
       const now = ctx.now();
       const p = period ? parsePeriod(period, now) : undefined;
       const dir = join(ctx.config.exportDir, folder_name ? safeStem(folder_name) : `bi-bundle-${timestampSlug(now)}`);
-      const res = writeBiBundle(cache, { dir, pii: ctx.config.pii, now, period: p });
+      const res = writeBiBundle(cache, { dir, pii: ctx.config.pii, key: keyFor(ctx.config), now, period: p });
       const partial = res.manifest.coverage.filter((c) => !c.complete).map((c) => c.feed);
       const counts = Object.fromEntries(res.manifest.tables.map((t) => [t.name, t.rows]));
       return {

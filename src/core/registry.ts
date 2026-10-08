@@ -111,7 +111,7 @@ export function selectTools(all: AnyToolSpec[], cfg: Pick<Config, "mode" | "tool
 
 const keyCache = new Map<string, Buffer>();
 /** Pseudonym key for this config (per token), so concurrent HTTP tenants never share or re-key. */
-function keyFor(cfg: Pick<Config, "apiToken">): Buffer {
+export function keyFor(cfg: Pick<Config, "apiToken">): Buffer {
   const seed = process.env.SC_PSEUDONYM_KEY ?? cfg.apiToken;
   let k = keyCache.get(seed);
   if (!k) {

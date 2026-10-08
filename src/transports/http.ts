@@ -52,6 +52,12 @@ export async function startHttp(config: Config, env: NodeJS.ProcessEnv = process
     if (url.pathname === "/healthz") return send(res, 200, { ok: true });
     if (url.pathname !== "/mcp") return send(res, 404, { error: "Not found. The MCP endpoint is /mcp." });
 
+    // DNS rebinding without an Origin header: when bound to loopback, only loopback Host names
+    // (or names explicitly allowed) may reach the server.
+    if (LOOPBACK.has(host) && !hostAllowed(req.headers.host, allowedOrigins)) {
+      return send(res, 403, { error: "Host not allowed." });
+    }
+
     const origin = req.headers.origin;
     if (origin && !allowedOrigins.includes(origin) && !isLoopbackOrigin(origin)) {
       return send(res, 403, { error: "Origin not allowed. Add it to SC_HTTP_ALLOWED_ORIGINS." });
@@ -101,6 +107,23 @@ export async function startHttp(config: Config, env: NodeJS.ProcessEnv = process
 function isLoopbackOrigin(origin: string) {
   try {
     return LOOPBACK.has(new URL(origin).hostname);
+  } catch {
+    return false;
+  }
+}
+
+function hostAllowed(hostHeader: string | undefined, allowedOrigins: string[]): boolean {
+  if (!hostHeader) return true; // HTTP/1.0 clients; the bearer and Origin checks still apply
+  try {
+    const name = new URL(`http://${hostHeader}`).hostname;
+    if (LOOPBACK.has(name)) return true;
+    return allowedOrigins.some((o) => {
+      try {
+        return new URL(o).hostname === name;
+      } catch {
+        return false;
+      }
+    });
   } catch {
     return false;
   }

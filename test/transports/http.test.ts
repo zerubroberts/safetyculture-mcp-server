@@ -71,3 +71,25 @@ describe("error responses", () => {
     expect(await res.json()).toEqual({ error: "Request body is not valid JSON." });
   });
 });
+
+import { startHttp as startHttp2 } from "../../src/transports/http.js";
+import { testConfig as testConfig2 } from "../helpers/mock-api.js";
+import { request } from "node:http";
+describe("host header check", () => {
+  it("rejects non-loopback Host names on a loopback-bound server", async () => {
+    const srv = await startHttp2(testConfig2({ SC_HTTP_PORT: "0" }), {});
+    const port = (srv.address() as { port: number }).port;
+    const status = (host: string) =>
+      new Promise<number>((resolve) => {
+        const r = request({ host: "127.0.0.1", port, path: "/mcp", method: "POST", headers: { host, "content-type": "application/json" } }, (res) => resolve(res.statusCode ?? 0));
+        r.end("{}");
+      });
+    try {
+      expect(await status("evil.example:8787")).toBe(403);
+      expect(await status(`127.0.0.1:${port}`)).not.toBe(403);
+      expect(await status(`localhost:${port}`)).not.toBe(403);
+    } finally {
+      srv.close();
+    }
+  });
+});
