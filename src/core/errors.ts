@@ -33,7 +33,9 @@ export class ScApiError extends Error {
                 ? "The API rejected the request. The message below usually says which field is wrong."
                 : status >= 500
                   ? "Mitti API server error. Usually temporary."
-                  : "";
+                  : status >= 200 && status < 300
+                    ? "The reply was not valid JSON (often a maintenance page). Usually temporary."
+                    : "";
     const snippet = redactSecrets(body).slice(0, 600);
     return `Mitti API ${status} on ${method} ${path.split("?")[0]}. ${hint}${snippet ? ` API said: ${snippet}` : ""}`;
   }

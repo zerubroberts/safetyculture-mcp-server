@@ -114,7 +114,10 @@ export function applyReplacements(text: string, replaced: Map<string, string>): 
     // "Zelda Quorn"; whole words only, so a short name like "Al" never rewrites "Total".
     if (original.length < 2) continue;
     const escaped = original.normalize("NFC").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    out = out.replace(new RegExp(`(?<![\\p{L}\\p{N}\\p{M}])${escaped}(?![\\p{L}\\p{N}\\p{M}])`, "giu"), () => alias);
+    // Scripts written without spaces (Chinese, Japanese, Thai...) have no word edges: match anywhere.
+    const unspaced = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}]/u.test(original);
+    const pattern = unspaced ? escaped : `(?<![\\p{L}\\p{M}])${escaped}(?![\\p{L}\\p{M}])`;
+    out = out.replace(new RegExp(pattern, "giu"), () => alias);
   }
   return out;
 }

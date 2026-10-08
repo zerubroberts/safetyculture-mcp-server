@@ -102,7 +102,13 @@ export class ScClient {
         if (opts.raw) return res as unknown as T;
         if (res.status === 204) return {} as T;
         const text = await res.text();
-        return (text ? JSON.parse(text) : {}) as T;
+        if (!text) return {} as T;
+        try {
+          return JSON.parse(text) as T;
+        } catch {
+          // Never quote the reply: JSON.parse errors include its first characters, which can be record text.
+          throw new ScApiError(res.status, method, path, "");
+        }
       }
 
       const shouldRetry = res.status === 429 || (res.status >= 500 && retryable5xx);

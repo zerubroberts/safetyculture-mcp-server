@@ -248,3 +248,20 @@ describe("pass 3 re-verification round 3: no path carries the upstream body at s
     expect(applyReplacements("José called", new Map([["José", "person_2"]]))).toBe("person_2 called");
   });
 });
+
+describe("pass 3 re-verification round 4", () => {
+  it("a 200 reply that is not JSON is never quoted", async () => {
+    const api = new MockApi().on("GET /tasks/v1/actions/a1", () => new Response("Zelda Quorn <html>maintenance</html>", { status: 200 }));
+    const { call } = await connect(api);
+    const r = await call("sc_get_action", { action_id: "a1" });
+    expect(r.isError).toBe(true);
+    expect(r.text).toContain("not valid JSON");
+    expect(r.text).not.toMatch(/zelda/i);
+  });
+
+  it("names in unspaced scripts and next to digits are replaced", async () => {
+    const { applyReplacements } = await import("../../src/security/redact.js");
+    expect(applyReplacements("担当者は田中です", new Map([["田中", "P"]]))).toBe("担当者はPです");
+    expect(applyReplacements("Zelda2 and 2Zelda", new Map([["Zelda", "P"]]))).toBe("P2 and 2P");
+  });
+});

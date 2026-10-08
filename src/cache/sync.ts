@@ -1,5 +1,6 @@
 import type { Query, ScClient } from "../core/client.js";
 import { ScApiError } from "../core/errors.js";
+import { redactSecrets } from "../security/redact.js";
 import type { FeedDef, FeedName, SyncReport } from "./contract.js";
 import { FEEDS } from "./feeds.js";
 import type { SqliteCache } from "./store.js";
@@ -109,7 +110,11 @@ async function runSync(client: ScClient, store: SqliteCache, def: FeedDef, opts:
       store.setState(def.name, { complete: false, last_error: lastError });
       return report({ complete: false, unavailable: message, error: lastError });
     }
-    const message = err instanceof Error ? err.message : String(err);
+    // API errors carry no reply text. Anything else may quote data (parse errors do), so only a
+    // fixed line is stored and shown; the detail goes to stderr, which stays on this machine.
+    const message =
+      err instanceof ScApiError ? err.message : `Unexpected ${err instanceof Error ? err.name : "error"} while syncing this feed (details on the server's stderr).`;
+    if (!(err instanceof ScApiError)) process.stderr.write(`[safetyculture-mcp] sync ${def.name} failed: ${redactSecrets(err instanceof Error ? err.message : String(err))}\n`);
     store.setState(def.name, { last_error: message });
     return report({ error: message, complete: Boolean(prev?.complete) });
   }
