@@ -1,7 +1,7 @@
 import type { AnalyticResult, CacheReader, FeedName } from "../cache/contract.js";
 import { links } from "../core/params.js";
 import { parsePeriod, previousPeriod, type Period } from "../core/time.js";
-import { buildResult, nameMaps, str } from "./common.js";
+import { buildResult, feedProblem, nameMaps, str, unavailableSentence } from "./common.js";
 import { isOverdue, isResolved, loadActions, normPriority, wholeDays } from "./backlog.js";
 import { answeredItems, completedInspections, idIn, type Inspection } from "./failed-items.js";
 import { loadOccurrences } from "./schedule-compliance.js";
@@ -118,6 +118,10 @@ export function safetyPulse(
   const b = periodStats(cache, prev, args.site_ids, hasSchedules);
   const names = nameMaps(cache);
   const t = now.getTime();
+  // Figures from an unreadable feed are withheld (null, row omitted), never reported as 0.
+  const noItems = feedProblem(cache, "inspection_items");
+  const noIssues = feedProblem(cache, "issues");
+  const noActions = feedProblem(cache, "actions");
 
   const row = (metric: string, unit: string, c: number | null, pv: number | null, nC: number, nP: number, dp = 1): PulseRow => ({
     metric,
@@ -136,27 +140,31 @@ export function safetyPulse(
   const table: PulseRow[] = [
     row("inspections_completed", "count", a.insp.size, b.insp.size, a.insp.size, b.insp.size, 0),
     row("average_score", "%", avgA, avgB, a.scores.length, b.scores.length),
-    row("failed_item_rate", "% of answered items", frA, frB, a.answered, b.answered, 2),
-    row("new_issues", "count", a.issues.length, b.issues.length, a.issues.length, b.issues.length, 0),
-    row("actions_created", "count", a.actionsCreated, b.actionsCreated, a.actionsCreated, b.actionsCreated, 0),
-    row("actions_completed", "count", a.actionsCompleted, b.actionsCompleted, a.actionsCompleted, b.actionsCompleted, 0),
   ];
+  if (!noItems) table.push(row("failed_item_rate", "% of answered items", frA, frB, a.answered, b.answered, 2));
+  if (!noIssues) table.push(row("new_issues", "count", a.issues.length, b.issues.length, a.issues.length, b.issues.length, 0));
+  if (!noActions)
+    table.push(
+      row("actions_created", "count", a.actionsCreated, b.actionsCreated, a.actionsCreated, b.actionsCreated, 0),
+      row("actions_completed", "count", a.actionsCompleted, b.actionsCompleted, a.actionsCompleted, b.actionsCompleted, 0),
+    );
   if (hasSchedules) table.push(row("missed_scheduled_inspections", "count", a.missed, b.missed, a.dueOccurrences, b.dueOccurrences, 0));
 
-  const actions = loadActions(cache, { site_ids: args.site_ids });
+  const actions = noActions ? [] : loadActions(cache, { site_ids: args.site_ids });
   const overdue = actions.filter((x) => isOverdue(x, t));
   const oldestCreated = overdue.filter((x) => x.created_ms !== undefined).reduce<number | undefined>((m, x) => (m === undefined || x.created_ms! < m ? x.created_ms : m), undefined);
   const maxOverdue = overdue.reduce<number | undefined>((m, x) => (m === undefined || x.due_ms! < m ? x.due_ms : m), undefined);
-  table.push({
-    metric: "open_overdue_actions",
-    unit: "count (now)",
-    current: overdue.length,
-    previous: null,
-    delta: null,
-    direction: "snapshot",
-    n_current: overdue.length,
-    n_previous: 0,
-  });
+  if (!noActions)
+    table.push({
+      metric: "open_overdue_actions",
+      unit: "count (now)",
+      current: overdue.length,
+      previous: null,
+      delta: null,
+      direction: "snapshot",
+      n_current: overdue.length,
+      n_previous: 0,
+    });
 
   // Attention list, by severity: overdue high-priority action > missed occurrences on a template >
   // failed-rate jump of >= 10 points on a template > new high-priority issue. Within a tier: most severe first.
@@ -180,7 +188,7 @@ export function safetyPulse(
       detail: `${n} scheduled inspection${n === 1 ? "" : "s"} missed on template "${names.templates.get(tpl) ?? tpl}".`,
     }));
   const tier3: Array<AttentionItem & { jump: number }> = [];
-  for (const [tpl, s] of a.byTemplate) {
+  for (const [tpl, s] of noItems ? [] : a.byTemplate) {
     const p = b.byTemplate.get(tpl);
     if (!p || s.answered < MIN_OBS || p.answered < MIN_OBS) continue;
     const jump = (100 * s.failed) / s.answered - (100 * p.failed) / p.answered;
@@ -195,7 +203,7 @@ export function safetyPulse(
     });
   }
   tier3.sort((x, y) => y.jump - x.jump || x.record_id.localeCompare(y.record_id));
-  const tier4 = a.issues
+  const tier4 = (noIssues ? [] : a.issues)
     .filter((r) => normPriority(r.priority) === "high")
     .sort((x, y) => String(y.created_at).localeCompare(String(x.created_at)) || String(x.id).localeCompare(String(y.id)))
     .map<AttentionItem>((r) => ({
@@ -218,11 +226,25 @@ export function safetyPulse(
       metrics[`${r.metric}_delta`] = r.delta;
     }
   }
+  const withheld = (metric: string, snapshot = false) => {
+    metrics[metric] = null;
+    if (!snapshot) {
+      metrics[`${metric}_previous`] = null;
+      metrics[`${metric}_delta`] = null;
+    }
+  };
+  if (noItems) withheld("failed_item_rate");
+  if (noIssues) withheld("new_issues");
+  if (noActions) {
+    withheld("actions_created");
+    withheld("actions_completed");
+    withheld("open_overdue_actions", true);
+  }
   metrics.oldest_overdue_action_age_days = oldestCreated !== undefined ? wholeDays(oldestCreated, t) : null;
   metrics.max_days_overdue = maxOverdue !== undefined ? wholeDays(maxOverdue, t) : null;
   metrics.scored_inspections = a.scores.length;
-  metrics.answered_items = a.answered;
-  metrics.failed_items = a.failed;
+  metrics.answered_items = noItems ? null : a.answered;
+  metrics.failed_items = noItems ? null : a.failed;
 
   const feeds: FeedName[] = ["inspections", "inspection_items", "actions", "issues", "schedule_occurrences"];
   const caveats: string[] = [
@@ -230,6 +252,9 @@ export function safetyPulse(
     "Lower issue counts can mean less reporting, not fewer hazards.",
     "Open overdue actions are a snapshot as of now, not a period figure.",
   ];
+  if (noItems) caveats.push(`Failed-item rate is not reported: ${noItems}. This is not a 0% rate.`);
+  if (noIssues) caveats.push(`New issues are not reported: ${noIssues}. This is not zero issues.`);
+  if (noActions) caveats.push(`Action figures (created, completed, open overdue) are not reported: ${noActions}. This is not zero actions.`);
   if (!hasSchedules) caveats.push("No schedule occurrences are cached, so missed scheduled inspections are not reported.");
   if (args.site_ids?.length && cache.rows("issues").some((r) => !r.site_id)) caveats.push("Issues without a site are excluded when filtering by site.");
 
@@ -247,11 +272,21 @@ export function safetyPulse(
     now,
   });
   const dir = (r: PulseRow) => r.direction;
-  const [ins, avg, fr] = table;
-  const summary =
-    `${cur.label}: ${ins!.current} inspections completed (previous ${ins!.previous}, ${dir(ins!)}), average score ${avg!.current ?? "n/a"}% (${dir(avg!)}), ` +
-    `failed-item rate ${fr!.current ?? "n/a"}% of ${a.answered} answered items (${dir(fr!)}), ${a.issues.length} new issues, ${a.actionsCreated} actions created vs ${a.actionsCompleted} completed, ` +
-    `${overdue.length} open overdue actions${hasSchedules ? `, ${a.missed} missed scheduled inspections` : ""}. ${attention.length} attention item${attention.length === 1 ? "" : "s"}.`;
+  const byMetric = (m: string) => table.find((r) => r.metric === m);
+  const ins = byMetric("inspections_completed")!;
+  const avg = byMetric("average_score")!;
+  const fr = byMetric("failed_item_rate");
+  const parts = [`${ins.current} inspections completed (previous ${ins.previous}, ${dir(ins)})`, `average score ${avg.current ?? "n/a"}% (${dir(avg)})`];
+  if (fr) parts.push(`failed-item rate ${fr.current ?? "n/a"}% of ${a.answered} answered items (${dir(fr)})`);
+  if (!noIssues) parts.push(`${a.issues.length} new issues`);
+  if (!noActions) parts.push(`${a.actionsCreated} actions created vs ${a.actionsCompleted} completed`, `${overdue.length} open overdue actions`);
+  if (hasSchedules) parts.push(`${a.missed} missed scheduled inspections`);
+  const gaps = [
+    noItems ? unavailableSentence("Failed-item figures", noItems) : "",
+    noIssues ? unavailableSentence("Issue figures", noIssues) : "",
+    noActions ? unavailableSentence("Action figures", noActions) : "",
+  ].filter(Boolean);
+  const summary = `${cur.label}: ${parts.join(", ")}. ${gaps.length ? `${gaps.join(" ")} ` : ""}${attention.length} attention item${attention.length === 1 ? "" : "s"}.`;
   return {
     summary,
     result: { ...result, attention, previous_period: { from: prev.from.toISOString(), to: prev.to.toISOString(), label: prev.label } },

@@ -1,7 +1,7 @@
 import type { AnalyticResult, CacheReader } from "../cache/contract.js";
 import { links } from "../core/params.js";
 import { parsePeriod, type Period } from "../core/time.js";
-import { bool, buildResult, nameMaps, num, str } from "./common.js";
+import { bool, buildResult, feedProblem, nameMaps, num, str, unavailableSentence } from "./common.js";
 import { pct } from "./stats.js";
 
 /**
@@ -176,6 +176,25 @@ export function analyzeFailedItems(cache: CacheReader, args: FailedItemsArgs, no
   const top = args.top ?? 20;
   const match = queryMatcher(args.query);
   const insp = completedInspections(cache, period, { site_ids: args.site_ids, template_ids: args.template_ids });
+  const filters = { query: args.query, template_ids: args.template_ids, site_ids: args.site_ids, group_by: groupBy, top };
+
+  // Unreadable items feed: item counts are missing, not zero.
+  const problem = feedProblem(cache, "inspection_items");
+  if (problem) {
+    const result = buildResult<ParetoRow>({
+      version: FAILED_ITEMS_VERSION,
+      period,
+      filters,
+      cache,
+      feeds: ["inspections", "inspection_items"],
+      metrics: { inspections: insp.size, failed_items: null, answered_items: null, failure_rate_pct: null, groups_with_failures: null, top_group_share_pct: null },
+      table: [],
+      method: "Failed items need the inspection items feed; it could not be read, so no item figures are computed.",
+      caveats: [`No item figures: ${problem}. This is not zero failed items.`],
+      now,
+    });
+    return { summary: `${unavailableSentence("Failed-item figures", problem)} ${insp.size} completed inspections ${period.label}.`, result };
+  }
   const names = nameMaps(cache);
   const { items } = answeredItems(cache, insp);
 
@@ -264,7 +283,7 @@ export function analyzeFailedItems(cache: CacheReader, args: FailedItemsArgs, no
   const result = buildResult({
     version: FAILED_ITEMS_VERSION,
     period,
-    filters: { query: args.query, template_ids: args.template_ids, site_ids: args.site_ids, group_by: groupBy, top },
+    filters,
     cache,
     feeds: ["inspections", "inspection_items"],
     metrics: {

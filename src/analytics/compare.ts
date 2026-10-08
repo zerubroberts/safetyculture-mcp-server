@@ -1,7 +1,7 @@
 import type { AnalyticResult, CacheReader } from "../cache/contract.js";
 import { ToolError } from "../core/errors.js";
 import { parsePeriod, previousPeriod, type Period } from "../core/time.js";
-import { buildResult, nameMaps } from "./common.js";
+import { buildResult, feedProblem, nameMaps, unavailableSentence } from "./common.js";
 import { loadActions, resolutionDays } from "./backlog.js";
 import { answeredItems, canon, completedInspections } from "./failed-items.js";
 import { mannWhitney, median, mean, pct, round, twoProportionTest, type TestResult } from "./stats.js";
@@ -30,7 +30,8 @@ export interface CompareRow {
   b_n: number;
   test: string;
   statistic: number | null;
-  p_value: number | null;
+  /** Three significant figures; below 0.0001 it is the string "< 0.0001", so a tiny p never reads as 0. */
+  p_value: number | "< 0.0001" | null;
   effect_size: number | null;
   effect_label: TestResult["effect_label"];
   verdict: TestResult["verdict"];
@@ -50,6 +51,9 @@ function sideStats(cache: CacheReader, s: Side) {
   const res = resolutionDays(loadActions(cache, { site_ids: s.site_ids }), s.period).days;
   return { inspections: insp.size, failed, answered, scores, res };
 }
+
+/** p-value for output: never rounded to 0. Below 0.0001 (beyond the normal approximation's accuracy) it is a bound. */
+export const reportP = (p: number): CompareRow["p_value"] => (!Number.isFinite(p) ? null : p < 0.0001 ? "< 0.0001" : Number(p.toPrecision(3)));
 
 const fmtP = (p: number) => (p < 0.001 ? "p < 0.001" : `p = ${p.toFixed(3)}`);
 
@@ -97,17 +101,22 @@ export function analyzeCompare(cache: CacheReader, args: CompareArgs, now: Date)
     b_n: bn,
     test: r.test,
     statistic: num(r.statistic),
-    p_value: num(r.p_value),
+    p_value: reportP(r.p_value),
     effect_size: num(r.effect_size),
     effect_label: r.effect_label,
     verdict: r.verdict,
     explanation: explain(title, unit, av, bv, an, bn, r, labels),
   });
-  const table: CompareRow[] = [
-    mk("failed_item_rate", "Failed-item rate", "%", pct(a.failed, a.answered, 2), pct(b.failed, b.answered, 2), a.answered, b.answered, fr),
-    mk("average_score", "Average inspection score", "%", round(mean(a.scores), 1), round(mean(b.scores), 1), a.scores.length, b.scores.length, sc),
-    mk("action_resolution_days", "Median action resolution", " days", round(median(a.res), 1), round(median(b.res), 1), a.res.length, b.res.length, rs),
-  ];
+  // Measures from an unreadable feed are left out (never tested on zeros).
+  const noItems = feedProblem(cache, "inspection_items");
+  const noActions = feedProblem(cache, "actions");
+  const fRow = noItems ? undefined : mk("failed_item_rate", "Failed-item rate", "%", pct(a.failed, a.answered, 2), pct(b.failed, b.answered, 2), a.answered, b.answered, fr);
+  const sRow = mk("average_score", "Average inspection score", "%", round(mean(a.scores), 1), round(mean(b.scores), 1), a.scores.length, b.scores.length, sc);
+  const rRow = noActions ? undefined : mk("action_resolution_days", "Median action resolution", " days", round(median(a.res), 1), round(median(b.res), 1), a.res.length, b.res.length, rs);
+  const table: CompareRow[] = [fRow, sRow, rRow].filter((r): r is CompareRow => r !== undefined);
+  const caveats: string[] = [];
+  if (noItems) caveats.push(`Failed-item rate is not compared: ${noItems}.`);
+  if (noActions) caveats.push(`Action resolution is not compared: ${noActions}.`);
 
   const result = buildResult({
     version: COMPARE_VERSION,
@@ -122,10 +131,10 @@ export function analyzeCompare(cache: CacheReader, args: CompareArgs, now: Date)
     metrics: {
       a_inspections: a.inspections,
       b_inspections: b.inspections,
-      a_failed_items: a.failed,
-      a_answered_items: a.answered,
-      b_failed_items: b.failed,
-      b_answered_items: b.answered,
+      a_failed_items: noItems ? null : a.failed,
+      a_answered_items: noItems ? null : a.answered,
+      b_failed_items: noItems ? null : b.failed,
+      b_answered_items: noItems ? null : b.answered,
       a_period: A.period.label,
       b_period: B.period.label,
     },
@@ -133,12 +142,19 @@ export function analyzeCompare(cache: CacheReader, args: CompareArgs, now: Date)
     method:
       "Failed-item rate: pooled two-proportion z-test with Cohen's h (needs >= 5 expected failures and passes per group). Inspection score and action resolution days: Mann-Whitney U with rank-biserial effect size (needs >= 8 per group). Verdict 'real difference' when p < 0.05.",
     caveats: [
+      ...caveats,
       "Repeated inspections of the same site (and items within one inspection) are not independent, so p-values are optimistic; treat borderline results as noise.",
       "Three tests are run at once; at p < 0.05 roughly one in twenty comparisons of truly equal groups will still look 'real'.",
       "A statistical difference is not proof of cause: template mix, inspectors and reporting habits can differ between the groups.",
     ],
     now,
   });
-  const summary = `${A.label} (${a.inspections} inspections) vs ${B.label} (${b.inspections} inspections): failed-item rate ${table[0]!.a_value ?? "n/a"}% vs ${table[0]!.b_value ?? "n/a"}% (${fr.verdict}), average score ${table[1]!.a_value ?? "n/a"}% vs ${table[1]!.b_value ?? "n/a"}% (${sc.verdict}), median resolution ${table[2]!.a_value ?? "n/a"} vs ${table[2]!.b_value ?? "n/a"} days (${rs.verdict}).`;
+  const parts = [
+    fRow ? `failed-item rate ${fRow.a_value ?? "n/a"}% vs ${fRow.b_value ?? "n/a"}% (${fr.verdict})` : "",
+    `average score ${sRow.a_value ?? "n/a"}% vs ${sRow.b_value ?? "n/a"}% (${sc.verdict})`,
+    rRow ? `median resolution ${rRow.a_value ?? "n/a"} vs ${rRow.b_value ?? "n/a"} days (${rs.verdict})` : "",
+  ].filter(Boolean);
+  const gaps = [noItems ? unavailableSentence(" Failed-item figures", noItems) : "", noActions ? unavailableSentence(" Action figures", noActions) : ""].join("");
+  const summary = `${A.label} (${a.inspections} inspections) vs ${B.label} (${b.inspections} inspections): ${parts.join(", ")}.${gaps}`;
   return { summary, result };
 }

@@ -12,7 +12,9 @@ Every analysis runs on a local copy of your Mitti Data Feeds (see [How the cache
 | `method` | The formula, in one or two sentences (the same text as below) |
 | `caveats` | Anything that limits the result: partial feeds, small samples, independence warnings |
 
-Numbers are computed from cached rows only. Nothing is estimated or extrapolated. When a feed is empty, never synced or still downloading, the result says so instead of reporting zero.
+Numbers are computed from cached rows only. Nothing is estimated or extrapolated.
+
+**A feed that could not be read is never reported as zero.** When a feed an analysis needs was never synced, is refused by the API (403/404), failed its latest refresh with no complete earlier snapshot to fall back on, or is still downloading for the first time, every figure derived from it is `null`, the table rows built from it are left out, and the summary says the figure is unavailable and why (for example "Action figures unavailable: the actions feed could not be read (HTTP 403: ...)."). A feed that synced successfully and is genuinely empty is different: its zeros are real and the result carries an "empty feed" caveat. A failed refresh over a complete earlier snapshot still uses that snapshot, with a caveat giving its age.
 
 ## Shared definitions
 - **Completed inspection**: an inspection with a completion date, not archived.
@@ -30,10 +32,12 @@ The Monday briefing. Each metric is computed for the period and the equal-length
 Failed items are answered items flagged `is_failed_response` in completed, non-archived inspections whose completion date is in the period. Share = group failed / all matching failed; failure rate = group failed / answered items of the same questions in that group. Search across every template with a text query (`fire extinguisher|exit`), group by item, template, site or inspector.
 
 ### Action backlog: `sc_analyze_action_backlog`
-Open = status To do or In progress. Age = whole days since created; overdue = due date before now, in whole days past due. Resolution = created to completed for actions completed in the period (median and 90th percentile, type-7 interpolation). Ageing buckets 0-7, 8-30, 31-90, 90+ days; open actions with no due date are counted separately; opened vs closed per week.
+Open = status To do or In progress. Age = whole days since created (rounded down); overdue = due date before now, in whole days past due. Ageing and overdue buckets are non-overlapping whole-day ranges: 0-7, 8-30, 31-90 and over 90 days (day 90 is in 31-90; "over 90" starts at day 91). Open actions with no due date are counted separately; opened vs closed per week.
+
+"Completed in period" and resolution time (created to completed, median and 90th percentile, type-7 interpolation) count only actions with status Complete, so Can't do actions are excluded. "Closed in period" counts every action with a completion date in the period, including Can't do ones, so it can be higher than "completed in period".
 
 ### Schedule compliance: `sc_analyze_schedule_compliance`
-Occurrences due in the period, one per schedule occurrence. Compliance = completed on time / (on time + late + missed); late and missed are shown separately; won't-do and not-yet-resolved occurrences are excluded from the denominator.
+Occurrences due in the period, one per schedule occurrence. Compliance = completed on time / (on time + late + missed); late and missed are shown separately; won't-do and not-yet-resolved occurrences are excluded from the denominator. Occurrences with status OVERDUE (past their miss time, not started) are not yet resolved: they count as pending, not as missed, until Mitti marks them late or missed.
 
 ### Credential radar: `sc_analyze_credential_radar`
 Days left = expiry date minus today's date (UTC). Expired = before today; buckets: 0-7, 8-30, 31-90 days. Only the latest-expiring credential per person and type counts (a renewed licence hides the one it replaced; the number hidden is stated); anything expiring on or after the horizon end is excluded.
