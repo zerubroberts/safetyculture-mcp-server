@@ -119,7 +119,10 @@ export function safetyPulse(
   const names = nameMaps(cache);
   const t = now.getTime();
   // Figures from an unreadable feed are withheld (null, row omitted), never reported as 0.
+  const noInsp = feedProblem(cache, "inspections");
   const noItems = feedProblem(cache, "inspection_items");
+  // The failed-item rate needs both inspections (which items count) and items.
+  const noRate = noItems ?? noInsp;
   const noIssues = feedProblem(cache, "issues");
   const noActions = feedProblem(cache, "actions");
 
@@ -137,11 +140,13 @@ export function safetyPulse(
   const avgB = round(mean(b.scores), 1);
   const frA = pct(a.failed, a.answered, 2);
   const frB = pct(b.failed, b.answered, 2);
-  const table: PulseRow[] = [
-    row("inspections_completed", "count", a.insp.size, b.insp.size, a.insp.size, b.insp.size, 0),
-    row("average_score", "%", avgA, avgB, a.scores.length, b.scores.length),
-  ];
-  if (!noItems) table.push(row("failed_item_rate", "% of answered items", frA, frB, a.answered, b.answered, 2));
+  const table: PulseRow[] = [];
+  if (!noInsp)
+    table.push(
+      row("inspections_completed", "count", a.insp.size, b.insp.size, a.insp.size, b.insp.size, 0),
+      row("average_score", "%", avgA, avgB, a.scores.length, b.scores.length),
+    );
+  if (!noRate) table.push(row("failed_item_rate", "% of answered items", frA, frB, a.answered, b.answered, 2));
   if (!noIssues) table.push(row("new_issues", "count", a.issues.length, b.issues.length, a.issues.length, b.issues.length, 0));
   if (!noActions)
     table.push(
@@ -188,7 +193,7 @@ export function safetyPulse(
       detail: `${n} scheduled inspection${n === 1 ? "" : "s"} missed on template "${names.templates.get(tpl) ?? tpl}".`,
     }));
   const tier3: Array<AttentionItem & { jump: number }> = [];
-  for (const [tpl, s] of noItems ? [] : a.byTemplate) {
+  for (const [tpl, s] of noRate ? [] : a.byTemplate) {
     const p = b.byTemplate.get(tpl);
     if (!p || s.answered < MIN_OBS || p.answered < MIN_OBS) continue;
     const jump = (100 * s.failed) / s.answered - (100 * p.failed) / p.answered;
@@ -233,7 +238,11 @@ export function safetyPulse(
       metrics[`${metric}_delta`] = null;
     }
   };
-  if (noItems) withheld("failed_item_rate");
+  if (noInsp) {
+    withheld("inspections_completed");
+    withheld("average_score");
+  }
+  if (noRate) withheld("failed_item_rate");
   if (noIssues) withheld("new_issues");
   if (noActions) {
     withheld("actions_created");
@@ -242,9 +251,9 @@ export function safetyPulse(
   }
   metrics.oldest_overdue_action_age_days = oldestCreated !== undefined ? wholeDays(oldestCreated, t) : null;
   metrics.max_days_overdue = maxOverdue !== undefined ? wholeDays(maxOverdue, t) : null;
-  metrics.scored_inspections = a.scores.length;
-  metrics.answered_items = noItems ? null : a.answered;
-  metrics.failed_items = noItems ? null : a.failed;
+  metrics.scored_inspections = noInsp ? null : a.scores.length;
+  metrics.answered_items = noRate ? null : a.answered;
+  metrics.failed_items = noRate ? null : a.failed;
 
   const feeds: FeedName[] = ["inspections", "inspection_items", "actions", "issues", "schedule_occurrences"];
   const caveats: string[] = [
@@ -252,7 +261,8 @@ export function safetyPulse(
     "Lower issue counts can mean less reporting, not fewer hazards.",
     "Open overdue actions are a snapshot as of now, not a period figure.",
   ];
-  if (noItems) caveats.push(`Failed-item rate is not reported: ${noItems}. This is not a 0% rate.`);
+  if (noInsp) caveats.push(`Inspection figures (completed, average score) are not reported: ${noInsp}. This is not zero inspections.`);
+  if (noRate) caveats.push(`Failed-item rate is not reported: ${noRate}. This is not a 0% rate.`);
   if (noIssues) caveats.push(`New issues are not reported: ${noIssues}. This is not zero issues.`);
   if (noActions) caveats.push(`Action figures (created, completed, open overdue) are not reported: ${noActions}. This is not zero actions.`);
   if (!hasSchedules) caveats.push("No schedule occurrences are cached, so missed scheduled inspections are not reported.");
@@ -273,20 +283,22 @@ export function safetyPulse(
   });
   const dir = (r: PulseRow) => r.direction;
   const byMetric = (m: string) => table.find((r) => r.metric === m);
-  const ins = byMetric("inspections_completed")!;
-  const avg = byMetric("average_score")!;
+  const ins = byMetric("inspections_completed");
+  const avg = byMetric("average_score");
   const fr = byMetric("failed_item_rate");
-  const parts = [`${ins.current} inspections completed (previous ${ins.previous}, ${dir(ins)})`, `average score ${avg.current ?? "n/a"}% (${dir(avg)})`];
+  const parts: string[] = [];
+  if (ins && avg) parts.push(`${ins.current} inspections completed (previous ${ins.previous}, ${dir(ins)})`, `average score ${avg.current ?? "n/a"}% (${dir(avg)})`);
   if (fr) parts.push(`failed-item rate ${fr.current ?? "n/a"}% of ${a.answered} answered items (${dir(fr)})`);
   if (!noIssues) parts.push(`${a.issues.length} new issues`);
   if (!noActions) parts.push(`${a.actionsCreated} actions created vs ${a.actionsCompleted} completed`, `${overdue.length} open overdue actions`);
   if (hasSchedules) parts.push(`${a.missed} missed scheduled inspections`);
   const gaps = [
+    noInsp ? unavailableSentence("Inspection figures", noInsp) : "",
     noItems ? unavailableSentence("Failed-item figures", noItems) : "",
     noIssues ? unavailableSentence("Issue figures", noIssues) : "",
     noActions ? unavailableSentence("Action figures", noActions) : "",
   ].filter(Boolean);
-  const summary = `${cur.label}: ${parts.join(", ")}. ${gaps.length ? `${gaps.join(" ")} ` : ""}${attention.length} attention item${attention.length === 1 ? "" : "s"}.`;
+  const summary = `${cur.label}: ${parts.length ? `${parts.join(", ")}. ` : ""}${gaps.length ? `${gaps.join(" ")} ` : ""}${attention.length} attention item${attention.length === 1 ? "" : "s"}.`;
   return {
     summary,
     result: { ...result, attention, previous_period: { from: prev.from.toISOString(), to: prev.to.toISOString(), label: prev.label } },

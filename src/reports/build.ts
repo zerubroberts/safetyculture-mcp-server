@@ -1,7 +1,7 @@
 import type { CacheReader, FeedName } from "../cache/contract.js";
 import { links } from "../core/params.js";
 import { parsePeriod, type Period } from "../core/time.js";
-import { coverageCaveats, coverage } from "../analytics/common.js";
+import { coverageCaveats, coverage, feedProblem, unavailableSentence } from "../analytics/common.js";
 import { round } from "../analytics/stats.js";
 import { computeTrend, siteKey, type Grain, type TrendMetric } from "../analytics/trend.js";
 import { computeHotspots } from "../analytics/hotspots.js";
@@ -31,11 +31,24 @@ const stamp = (now: Date) => fmtInstant(now);
 /** Order-preserving dedupe so a caveat shared by two analytics prints once. */
 const unique = (xs: string[]): string[] => [...new Set(xs)];
 const pctText = (v: number | null | undefined) => (v === null || v === undefined ? null : `${v}%`);
+/** "12 issues", or "issues unavailable" when the figure is withheld: never "null issues" or a made-up 0. */
+const countText = (v: number | string | null | undefined, noun: string) => (v === null || v === undefined ? `${noun} unavailable` : `${v} ${noun}`);
+/** Text block standing in for figures withheld because a feed cannot be read. */
+const unavailableBlock = (text: string): Block => ({ kind: "text", text });
+/** The section as built, or just its title and the reason when its figures are unavailable. */
+const gated = (unavailable: string | null, s: Section): Section => (unavailable ? { title: s.title, blocks: [unavailableBlock(unavailable)] } : s);
 
-function trendChart(cache: CacheReader, metric: TrendMetric, grain: Grain, period: Period, siteIds: string[] | undefined, now: Date, kind: Chart["kind"], title: string, yLabel: string): Chart {
-  const t = computeTrend(cache, { metric, grain, period, site_ids: siteIds }, now).result;
+/** Inspection-based trends: the trend analytic only checks its item/action/issue feed, so the inspections feed is checked here. */
+const INSPECTION_TRENDS = new Set<TrendMetric>(["inspections_completed", "average_score", "failed_item_rate"]);
+
+/** A trend chart, or an "unavailable" note when the metric's feed cannot be read (an empty chart would read as zero). */
+function trendChart(cache: CacheReader, metric: TrendMetric, grain: Grain, period: Period, siteIds: string[] | undefined, now: Date, kind: Chart["kind"], title: string, yLabel: string): Block {
+  const noInsp = INSPECTION_TRENDS.has(metric) ? feedProblem(cache, "inspections") : null;
+  if (noInsp) return unavailableBlock(unavailableSentence(title, noInsp));
+  const { result: t, summary } = computeTrend(cache, { metric, grain, period, site_ids: siteIds }, now);
+  if (t.metrics.buckets === null) return unavailableBlock(`${title}: ${summary.charAt(0).toLowerCase()}${summary.slice(1)}`);
   const unit = metric === "average_score" || metric === "failed_item_rate" ? "%" : "";
-  return {
+  const chart: Chart = {
     kind,
     title: `${title}: trend ${t.metrics.direction}`,
     xLabel: grain === "week" ? "Week starting" : "Month",
@@ -44,10 +57,12 @@ function trendChart(cache: CacheReader, metric: TrendMetric, grain: Grain, perio
     yMax: unit === "%" ? 100 : undefined,
     points: t.table.map((r) => ({ label: r.bucket, value: r.value, partial: r.partial })),
   };
+  return { kind: "chart", chart };
 }
 
-function failedItemsBlocks(cache: CacheReader, period: string, siteIds: string[] | undefined, top: number, chart: boolean, now: Date): { blocks: Block[]; total: number } {
+function failedItemsBlocks(cache: CacheReader, period: string, siteIds: string[] | undefined, top: number, chart: boolean, now: Date): { blocks: Block[]; total: number | null } {
   const f = topFailedItems(cache, period, siteIds, top, now);
+  if (f.unavailable) return { blocks: [unavailableBlock(f.unavailable)], total: null };
   const blocks: Block[] = [];
   if (chart && f.rows.length)
     blocks.push({
@@ -129,20 +144,20 @@ export function buildSafetyPulse(cache: CacheReader, args: { period?: string; si
         blocks: [{ kind: "list", items: attention, empty: "Nothing meets the attention rules this period." }],
       },
       { title: "Key figures", intro: "This period against the previous period of the same length.", blocks: [{ kind: "kpis", tiles }] },
-      { title: "Inspections per week", blocks: [{ kind: "chart", chart: trendChart(cache, "inspections_completed", "week", trendPeriod, args.site_ids, now, "bar", "Inspections completed per week, last 12 weeks", "Inspections") }] },
+      { title: "Inspections per week", blocks: [trendChart(cache, "inspections_completed", "week", trendPeriod, args.site_ids, now, "bar", "Inspections completed per week, last 12 weeks", "Inspections")] },
       { title: "Top failed items", blocks: failed.blocks },
-      {
+      gated(overdue.unavailable, {
         title: "Overdue actions",
-        intro: `${overdue.length} open actions are past their due date.`,
+        intro: `${overdue.rows.length} open actions are past their due date.`,
         blocks: [
           {
             kind: "table",
             columns: [{ label: "Action" }, { label: "Site" }, { label: "Priority" }, { label: "Due" }, { label: "Days overdue", align: "right" }],
-            rows: overdue.slice(0, 15).map((a) => [{ text: a.title, href: links.action(a.id) }, a.site, a.priority, a.due, a.days_overdue]),
+            rows: overdue.rows.slice(0, 15).map((a) => [{ text: a.title, href: links.action(a.id) }, a.site, a.priority, a.due, a.days_overdue]),
             empty: "No overdue actions.",
           },
         ],
-      },
+      }),
       coverageSection(cache, ["inspections", "inspection_items", "actions", "issues", "schedule_occurrences", "sites", "templates"], now, [...COMMON_METHODS, ...pulse.result.caveats.filter((c) => !c.startsWith("Feed "))]),
     ],
   };
@@ -154,7 +169,7 @@ export function buildSafetyPulse(cache: CacheReader, args: { period?: string; si
       average_score: metric(rows, "average_score"),
       failed_item_rate: metric(rows, "failed_item_rate"),
       issues_created: metric(rows, "new_issues"),
-      overdue_actions: overdue.length,
+      overdue_actions: overdue.unavailable ? null : overdue.rows.length,
       attention_items: attention.length,
     },
   };
@@ -168,14 +183,18 @@ export function buildAuditPack(cache: CacheReader, args: { period?: string; site
   const { pulse, tiles } = pulseSections(cache, periodText, args.site_ids, now);
   const failed = failedItemsBlocks(cache, periodText, args.site_ids, 15, true, now);
   const b = backlogSummary(cache, periodText, args.site_ids, now);
-  const hot = computeHotspots(cache, { period, site_ids: args.site_ids, limit: 15 }, now).result;
+  const { result: hot, summary: hotSummary } = computeHotspots(cache, { period, site_ids: args.site_ids, limit: 15 }, now);
   const sched = scheduleSummary(cache, periodText, args.site_ids, now);
   const created = computeTrend(cache, { metric: "actions_created", grain: "month", period, site_ids: args.site_ids }, now).result.table;
   const completed = computeTrend(cache, { metric: "actions_completed", grain: "month", period, site_ids: args.site_ids }, now).result.table;
   const sm = sched.metrics;
-  const hasSched = sm.due !== null;
+  const noSched = feedProblem(cache, "schedule_occurrences");
+  const hasSched = sm.due !== null && !noSched;
+  const noInspRates = feedProblem(cache, "inspections");
 
-  const schedBlocks: Block[] = !hasSched
+  const schedBlocks: Block[] = noSched
+    ? [unavailableBlock(`${unavailableSentence("Schedule compliance", noSched)} This is not 0% or 100% compliance.`)]
+    : !hasSched
     ? [{ kind: "text", text: "No scheduling data in the cache (the schedule occurrences feed is empty), so no compliance figure is reported. This is not 0% or 100% compliance." }]
     : [
         {
@@ -208,12 +227,12 @@ export function buildAuditPack(cache: CacheReader, args: { period?: string; site
       {
         title: "Inspection volume and score",
         blocks: [
-          { kind: "chart", chart: trendChart(cache, "inspections_completed", "month", period, args.site_ids, now, "bar", "Inspections completed per month", "Inspections") },
-          { kind: "chart", chart: trendChart(cache, "average_score", "month", period, args.site_ids, now, "line", "Average inspection score per month", "Average score") },
+          trendChart(cache, "inspections_completed", "month", period, args.site_ids, now, "bar", "Inspections completed per month", "Inspections"),
+          trendChart(cache, "average_score", "month", period, args.site_ids, now, "line", "Average inspection score per month", "Average score"),
         ],
       },
       { title: "Failed-item Pareto", intro: "Items ranked by failed answers; the dashed line shows the cumulative share of all failures.", blocks: failed.blocks },
-      {
+      gated(b.unavailable, {
         title: "Action backlog and closure",
         blocks: [
           {
@@ -242,8 +261,8 @@ export function buildAuditPack(cache: CacheReader, args: { period?: string; site
             rows: created.map((r, i) => [r.bucket, r.value, completed[i]?.value ?? null]),
           },
         ],
-      },
-      {
+      }),
+      gated(hot.metrics.issues === null ? hotSummary : null, {
         title: "Issues by category",
         intro: `${hot.metrics.issues} issues reported in the period (previous period ${hot.metrics.previous_period_issues}).`,
         blocks: [
@@ -256,12 +275,12 @@ export function buildAuditPack(cache: CacheReader, args: { period?: string; site
           {
             kind: "table",
             columns: [{ label: "Hotspot: category" }, { label: "Site" }, { label: "Issues", align: "right" }, { label: "Per 100 inspections", align: "right" }],
-            rows: hot.table.slice(0, 10).map((r) => [r.category, r.site_name, r.issues, r.per_100_inspections]),
+            rows: hot.table.slice(0, 10).map((r) => [r.category, r.site_name, r.issues, noInspRates ? "n/a" : r.per_100_inspections]),
             empty: "No issues reported in this period.",
           },
-          { kind: "notes", items: hot.caveats.filter((c) => !c.startsWith("Feed ")) },
+          { kind: "notes", items: [...(noInspRates ? [unavailableSentence("Per-100-inspection rates", noInspRates)] : []), ...hot.caveats.filter((c) => !c.startsWith("Feed "))] },
         ],
-      },
+      }),
       { title: "Schedule compliance", blocks: schedBlocks },
       coverageSection(cache, ["inspections", "inspection_items", "actions", "issues", "schedule_occurrences", "sites", "templates"], now, [
         ...COMMON_METHODS,
@@ -273,7 +292,7 @@ export function buildAuditPack(cache: CacheReader, args: { period?: string; site
   const inspections = metric(pulse.result.table, "inspections_completed");
   return {
     report,
-    summary: `Audit pack for ${period.label}: ${inspections} inspections, ${failed.total} failed answers, ${bm.open} open actions (${bm.overdue} overdue), ${hot.metrics.issues} issues${hasSched ? `, ${sm.compliance_pct ?? "n/a"}% of resolved scheduled inspections on time` : ""}.`,
+    summary: `Audit pack for ${period.label}: ${countText(inspections, "inspections")}, ${countText(failed.total, "failed answers")}, ${bm.open === null ? "actions unavailable" : `${bm.open} open actions (${bm.overdue} overdue)`}, ${countText(hot.metrics.issues, "issues")}${hasSched ? `, ${sm.compliance_pct ?? "n/a"}% of resolved scheduled inspections on time` : ""}.`,
     metrics: {
       inspections_completed: inspections,
       failed_answers: failed.total,
@@ -296,8 +315,9 @@ export function buildSiteScorecard(cache: CacheReader, args: { site_id: string; 
   const { pulse, tiles } = pulseSections(cache, periodText, siteIds, now);
   const failed = failedItemsBlocks(cache, periodText, siteIds, 10, false, now);
   const b = backlogSummary(cache, periodText, siteIds, now);
-  const hot = computeHotspots(cache, { period, site_ids: siteIds, limit: 10 }, now).result;
-  const insp = computeInspectorActivity(cache, { period, site_ids: siteIds }, now).result;
+  const { result: hot, summary: hotSummary } = computeHotspots(cache, { period, site_ids: siteIds, limit: 10 }, now);
+  const { result: insp, summary: inspSummary } = computeInspectorActivity(cache, { period, site_ids: siteIds }, now);
+  const noItems = feedProblem(cache, "inspection_items");
   const bm = b.metrics;
   const rows = pulse.result.table;
 
@@ -312,12 +332,12 @@ export function buildSiteScorecard(cache: CacheReader, args: { site_id: string; 
       {
         title: "Trend",
         blocks: [
-          { kind: "chart", chart: trendChart(cache, "inspections_completed", "month", period, siteIds, now, "bar", "Inspections completed per month", "Inspections") },
-          { kind: "chart", chart: trendChart(cache, "failed_item_rate", "month", period, siteIds, now, "line", "Failed-item rate per month", "Failed-item rate") },
+          trendChart(cache, "inspections_completed", "month", period, siteIds, now, "bar", "Inspections completed per month", "Inspections"),
+          trendChart(cache, "failed_item_rate", "month", period, siteIds, now, "line", "Failed-item rate per month", "Failed-item rate"),
         ],
       },
       { title: "Top failed items", blocks: failed.blocks },
-      {
+      gated(b.unavailable, {
         title: "Open actions",
         intro: `${bm.open} open, ${bm.overdue} overdue, ${bm.open_no_due_date} without a due date. Oldest first.`,
         blocks: [
@@ -334,8 +354,8 @@ export function buildSiteScorecard(cache: CacheReader, args: { site_id: string; 
             empty: "No open actions.",
           },
         ],
-      },
-      {
+      }),
+      gated(hot.metrics.issues === null ? hotSummary : null, {
         title: "Issues",
         intro: `${hot.metrics.issues} issues reported in the period (previous period ${hot.metrics.previous_period_issues}).`,
         blocks: [
@@ -346,8 +366,8 @@ export function buildSiteScorecard(cache: CacheReader, args: { site_id: string; 
             empty: "No issues reported in this period.",
           },
         ],
-      },
-      {
+      }),
+      gated(insp.metrics.inspections === null ? inspSummary : null, {
         title: "Inspector activity",
         intro: "Descriptive only. Volume depends on role and roster; this is not a performance score.",
         blocks: [
@@ -364,13 +384,14 @@ export function buildSiteScorecard(cache: CacheReader, args: { site_id: string; 
               person(r.inspector_name),
               r.inspections,
               r.median_duration_seconds === null ? null : round(r.median_duration_seconds / 60, 1),
-              pctText(r.failed_item_rate),
-              pctText(r.expected_rate_same_templates),
+              noItems ? "n/a" : pctText(r.failed_item_rate),
+              noItems ? "n/a" : pctText(r.expected_rate_same_templates),
             ]),
             empty: "No completed inspections at this site in the period.",
           },
+          { kind: "notes", items: noItems ? [unavailableSentence("Failed-item rates", noItems)] : [] },
         ],
-      },
+      }),
       coverageSection(cache, ["inspections", "inspection_items", "actions", "issues", "sites", "users"], now, [
         ...COMMON_METHODS,
         "Inspector = inspection owner. Same-template average = the organisation's failed-item rate on the templates that inspector used, weighted by their answered items. Duration is read as seconds.",
@@ -379,7 +400,7 @@ export function buildSiteScorecard(cache: CacheReader, args: { site_id: string; 
   };
   return {
     report,
-    summary: `Scorecard for ${siteName} over ${period.label}: ${metric(rows, "inspections_completed")} inspections, failed-item rate ${metric(rows, "failed_item_rate") ?? "n/a"}%, ${bm.open} open actions (${bm.overdue} overdue), ${hot.metrics.issues} issues.`,
+    summary: `Scorecard for ${siteName} over ${period.label}: ${countText(metric(rows, "inspections_completed"), "inspections")}, ${metric(rows, "failed_item_rate") === null ? "failed-item rate unavailable" : `failed-item rate ${metric(rows, "failed_item_rate")}%`}, ${bm.open === null ? "actions unavailable" : `${bm.open} open actions (${bm.overdue} overdue)`}, ${countText(hot.metrics.issues, "issues")}.`,
     metrics: {
       site: siteName,
       inspections_completed: metric(rows, "inspections_completed"),

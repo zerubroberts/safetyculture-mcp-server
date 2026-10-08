@@ -178,8 +178,10 @@ export function analyzeFailedItems(cache: CacheReader, args: FailedItemsArgs, no
   const insp = completedInspections(cache, period, { site_ids: args.site_ids, template_ids: args.template_ids });
   const filters = { query: args.query, template_ids: args.template_ids, site_ids: args.site_ids, group_by: groupBy, top };
 
-  // Unreadable items feed: item counts are missing, not zero.
-  const problem = feedProblem(cache, "inspection_items");
+  // Unreadable inspections or items feed: counts are missing, not zero. Without inspections even the
+  // inspection count is withheld, since items are only counted for completed inspections in the period.
+  const noInsp = feedProblem(cache, "inspections");
+  const problem = noInsp ?? feedProblem(cache, "inspection_items");
   if (problem) {
     const result = buildResult<ParetoRow>({
       version: FAILED_ITEMS_VERSION,
@@ -187,13 +189,16 @@ export function analyzeFailedItems(cache: CacheReader, args: FailedItemsArgs, no
       filters,
       cache,
       feeds: ["inspections", "inspection_items"],
-      metrics: { inspections: insp.size, failed_items: null, answered_items: null, failure_rate_pct: null, groups_with_failures: null, top_group_share_pct: null },
+      metrics: { inspections: noInsp ? null : insp.size, failed_items: null, answered_items: null, failure_rate_pct: null, groups_with_failures: null, top_group_share_pct: null },
       table: [],
-      method: "Failed items need the inspection items feed; it could not be read, so no item figures are computed.",
-      caveats: [`No item figures: ${problem}. This is not zero failed items.`],
+      method: `Failed items need the inspections and inspection items feeds; the ${noInsp ? "inspections" : "inspection items"} feed could not be read, so no item figures are computed.`,
+      caveats: [`No ${noInsp ? "inspection or item" : "item"} figures: ${problem}. This is not zero failed items.`],
       now,
     });
-    return { summary: `${unavailableSentence("Failed-item figures", problem)} ${insp.size} completed inspections ${period.label}.`, result };
+    const summary = noInsp
+      ? unavailableSentence("Inspection and failed-item figures", noInsp)
+      : `${unavailableSentence("Failed-item figures", problem)} ${insp.size} completed inspections ${period.label}.`;
+    return { summary, result };
   }
   const names = nameMaps(cache);
   const { items } = answeredItems(cache, insp);

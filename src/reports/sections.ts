@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { CacheReader, FeedName } from "../cache/contract.js";
-import { coverage, nameMaps, str } from "../analytics/common.js";
+import { coverage, feedProblem, nameMaps, str, unavailableSentence } from "../analytics/common.js";
 import { safetyPulse, type PulseRow } from "../analytics/pulse.js";
 import { analyzeFailedItems } from "../analytics/failed-items.js";
 import { analyzeActionBacklog, isOverdue, loadActions, wholeDays } from "../analytics/backlog.js";
@@ -37,11 +37,34 @@ const TILE: Record<string, { label: string; unit: string; good?: "up" | "down" }
   open_overdue_actions: { label: "Open overdue actions", unit: "" },
 };
 
-/** KPI tiles from the core safety pulse: deltas only where the pulse states a direction (>= 20 observations both periods). */
+/** Feed whose failure withholds each pulse tile (the failed-item rate also needs inspections). */
+const TILE_FEEDS: Record<string, FeedName[]> = {
+  inspections_completed: ["inspections"],
+  average_score: ["inspections"],
+  failed_item_rate: ["inspection_items", "inspections"],
+  new_issues: ["issues"],
+  actions_created: ["actions"],
+  actions_completed: ["actions"],
+  open_overdue_actions: ["actions"],
+};
+
+/** Why a tile has no value, or null when its feeds are readable. */
+function tileProblem(cache: CacheReader, metric: string): string | null {
+  for (const f of TILE_FEEDS[metric] ?? []) {
+    const p = feedProblem(cache, f);
+    if (p) return p;
+  }
+  return null;
+}
+
+/**
+ * KPI tiles from the core safety pulse: deltas only where the pulse states a direction (>= 20 observations both
+ * periods). A figure the pulse withholds because its feed cannot be read becomes an "n/a" tile with the reason.
+ */
 export function pulseSections(cache: CacheReader, period: string, siteIds: string[] | undefined, now: Date) {
   const pulse = safetyPulse(cache, { period, site_ids: siteIds }, now);
   const r = pulse.result;
-  const tiles: Tile[] = r.table.map((row: PulseRow) => {
+  const toTile = (row: PulseRow): Tile => {
     const t = TILE[row.metric] ?? { label: row.metric, unit: "" };
     if (row.direction === "snapshot") {
       const max = r.metrics.max_days_overdue;
@@ -57,7 +80,17 @@ export function pulseSections(cache: CacheReader, period: string, siteIds: strin
       note: enough ? undefined : `too few to compare (${row.n_current} vs ${row.n_previous} observations; needs 20 each)`,
       good: t.good,
     };
-  });
+  };
+  const tiles: Tile[] = [];
+  for (const metric of Object.keys(TILE)) {
+    const row = r.table.find((x) => x.metric === metric);
+    if (row) tiles.push(toTile(row));
+    else {
+      const problem = tileProblem(cache, metric);
+      if (problem) tiles.push({ label: TILE[metric]!.label, value: null, unit: TILE[metric]!.unit, note: `unavailable: ${problem}` });
+    }
+  }
+  for (const row of r.table) if (!TILE[row.metric]) tiles.push(toTile(row));
   const attention = r.attention.map((a) => ({ text: a.detail, href: a.link }));
   return { pulse, tiles, attention };
 }
@@ -73,9 +106,13 @@ export interface FailedItemRow {
   examples: string[];
 }
 
-/** Failed-item Pareto by item (normalised label within template), from the core failed-items analytic. */
+/**
+ * Failed-item Pareto by item (normalised label within template), from the core failed-items analytic.
+ * When a feed cannot be read the totals are null and `unavailable` carries the analytic's reason.
+ */
 export function topFailedItems(cache: CacheReader, period: string, siteIds: string[] | undefined, top: number, now: Date) {
-  const { result } = analyzeFailedItems(cache, { period, site_ids: siteIds, group_by: "item", top }, now);
+  const { summary, result } = analyzeFailedItems(cache, { period, site_ids: siteIds, group_by: "item", top }, now);
+  const num = (v: unknown) => (v === null || v === undefined ? null : Number(v));
   const rows: FailedItemRow[] = result.table.map((r) => ({
     template: r.template ?? "",
     label: r.group,
@@ -86,7 +123,8 @@ export function topFailedItems(cache: CacheReader, period: string, siteIds: stri
     cumulative_share: r.cumulative_share_pct,
     examples: r.example_inspections.map((e) => e.id),
   }));
-  return { rows, totalFailed: Number(result.metrics.failed_items ?? 0), totalAnswered: Number(result.metrics.answered_items ?? 0) };
+  const totalFailed = num(result.metrics.failed_items);
+  return { rows, totalFailed, totalAnswered: num(result.metrics.answered_items), unavailable: totalFailed === null ? summary : null };
 }
 
 export interface OverdueRow {
@@ -98,11 +136,16 @@ export interface OverdueRow {
   days_overdue: number;
 }
 
-/** Open actions due before now (core loadActions + isOverdue), most overdue first. */
-export function overdueActions(cache: CacheReader, siteIds: string[] | undefined, now: Date): OverdueRow[] {
+/**
+ * Open actions due before now (core loadActions + isOverdue), most overdue first. When the actions feed
+ * cannot be read there are no rows and `unavailable` says why: an empty list would read as "none overdue".
+ */
+export function overdueActions(cache: CacheReader, siteIds: string[] | undefined, now: Date): { rows: OverdueRow[]; unavailable: string | null } {
+  const problem = feedProblem(cache, "actions");
+  if (problem) return { rows: [], unavailable: unavailableSentence("Action figures", problem) };
   const t = now.getTime();
   const names = siteNameMap(cache);
-  return loadActions(cache, { site_ids: siteIds })
+  const rows = loadActions(cache, { site_ids: siteIds })
     .filter((a) => isOverdue(a, t))
     .map((a) => ({
       id: a.id,
@@ -113,11 +156,13 @@ export function overdueActions(cache: CacheReader, siteIds: string[] | undefined
       days_overdue: wholeDays(a.due_ms!, t),
     }))
     .sort((a, b) => b.days_overdue - a.days_overdue || a.id.localeCompare(b.id));
+  return { rows, unavailable: null };
 }
 
-/** Core action backlog for the scope; resolution and flow over the period. */
+/** Core action backlog for the scope; resolution and flow over the period. `unavailable` is set when its figures are withheld. */
 export function backlogSummary(cache: CacheReader, period: string, siteIds: string[] | undefined, now: Date) {
-  return analyzeActionBacklog(cache, { period, site_ids: siteIds }, now).result;
+  const { summary, result } = analyzeActionBacklog(cache, { period, site_ids: siteIds }, now);
+  return { ...result, unavailable: result.metrics.open === null ? summary : null };
 }
 
 /** Core schedule compliance. `metrics.due` is null when the occurrences feed is empty (no scheduling data). */
@@ -125,6 +170,15 @@ export function scheduleSummary(cache: CacheReader, period: string, siteIds: str
   return analyzeScheduleCompliance(cache, { period, site_ids: siteIds }, now).result;
 }
 
+/** Coverage column: a feed that cannot back a figure reads "unavailable", never "partial". */
+function coverageText(cache: CacheReader, c: ReturnType<typeof coverage>[number]): string {
+  if (c.note === "still syncing") return "unavailable (still downloading)";
+  if (feedProblem(cache, c.feed)) return "unavailable";
+  if (c.complete) return "complete";
+  if (c.last_error) return "stale (latest refresh failed)";
+  return "partial (row cap)";
+}
+
 export function coverageTable(cache: CacheReader, feeds: FeedName[]): Cell[][] {
-  return coverage(cache, feeds).map((c) => [c.feed, c.rows, c.last_synced_at ? fmtInstant(c.last_synced_at) : "never synced", c.complete ? "complete" : c.last_synced_at ? "partial (row cap)" : "missing"]);
+  return coverage(cache, feeds).map((c) => [c.feed, c.rows, c.last_synced_at ? fmtInstant(c.last_synced_at) : "never synced", coverageText(cache, c)]);
 }
