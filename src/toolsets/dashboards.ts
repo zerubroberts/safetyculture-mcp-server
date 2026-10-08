@@ -4,6 +4,7 @@ import { sanitize } from "../security/redact.js";
 import { buildDashboardData, DASHBOARD_FEEDS } from "../dashboard/data.js";
 import { renderDashboardHtml, VIEWS } from "../dashboard/html.js";
 import { writeDashboard } from "../dashboard/write.js";
+import { DASHBOARD_TOOL_META } from "../dashboard/app.js";
 
 // Interactive HTML dashboard (toolset "reports"): one self-contained file with six views, period presets and
 // a site filter, all precomputed from the local cache by the analytics functions. Written to
@@ -16,6 +17,8 @@ export const dashboardTools: AnyToolSpec[] = [
     toolset: "reports",
     access: "read",
     localWrite: true,
+    // MCP Apps hosts render the result inline with the dashboard view; other clients get the file path.
+    meta: DASHBOARD_TOOL_META,
     description:
       "Writes an interactive safety dashboard (one self-contained HTML file, opens offline in any browser) to the local export folder: overview KPIs, inspections and failed-item Pareto, action backlog ageing, schedule compliance, site comparison, and people and templates, with 7/30/90-day and 12-month presets and a site filter. Returns the file path and headline numbers.",
     input: {
@@ -41,6 +44,7 @@ export const dashboardTools: AnyToolSpec[] = [
           metrics: built.metrics,
         },
         untrusted: true,
+        structured: { dashboard: data },
       };
     },
   }),

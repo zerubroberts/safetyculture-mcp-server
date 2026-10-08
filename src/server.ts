@@ -7,6 +7,7 @@ import { createDemoFetch } from "./demo/fetch.js";
 import { createRegistry, defineTool, formatResult, selectTools, TOOLSETS, type AnyToolSpec, type ToolContext, type ToolsetId } from "./core/registry.js";
 import { registerPrompts } from "./prompts.js";
 import { registerResources } from "./resources.js";
+import { registerDashboardApp } from "./dashboard/app.js";
 import { AuditLog } from "./security/audit.js";
 import { registerSecret, setPseudonymKey } from "./security/redact.js";
 import { ALL_TOOLS } from "./toolsets/index.js";
@@ -86,6 +87,7 @@ export function buildServer(config: Config, opts: { fetch?: typeof fetch; tools?
 
   for (const t of [...meta, ...selectTools(catalogue, config)]) registry.register(t);
   registerResources(server, ctx);
+  registerDashboardApp(server);
   registerPrompts(server);
 
   return { server, ctx, tools: [...registry.registered.keys()] };

@@ -13,7 +13,8 @@ import { renderDashboardHtml } from "./html.js";
  */
 
 export const DASHBOARD_APP_URI = "ui://safetyculture-mcp/dashboard";
-export const DASHBOARD_APP_MIME = "text/html;profile=mcp-app";
+export { MCP_APP_MIME as DASHBOARD_APP_MIME } from "../core/registry.js";
+import { MCP_APP_MIME as DASHBOARD_APP_MIME } from "../core/registry.js";
 
 /** `_meta` for the sc_build_dashboard tool definition, linking it to the view. */
 export const DASHBOARD_TOOL_META = { ui: { resourceUri: DASHBOARD_APP_URI } } as const;

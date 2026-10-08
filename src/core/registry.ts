@@ -41,6 +41,12 @@ export interface ToolResult {
   data?: unknown;
   /** True when `data` contains text typed by end users (notes, descriptions, comments). */
   untrusted?: boolean;
+  /**
+   * UI-only payload for MCP Apps views (sent as structuredContent). Only attached when the client advertised
+   * the MCP Apps extension, whose hosts keep structuredContent out of model context; other clients never get
+   * it. Must already be sanitised with the privacy policy.
+   */
+  structured?: Record<string, unknown>;
 }
 
 export interface CacheProvider {
@@ -75,6 +81,8 @@ export interface ToolSpec<S extends z.ZodRawShape = z.ZodRawShape> {
    * read-only mode, yet reported to clients with readOnlyHint=false so they can ask before running it.
    */
   localWrite?: boolean;
+  /** Tool `_meta` (for example the MCP Apps view link `{ ui: { resourceUri } }`). */
+  meta?: Record<string, unknown>;
   input: S;
   /** Destructive tools must describe the change without making it. */
   plan?: (args: Args<S>, ctx: ToolContext) => Promise<ToolResult>;
@@ -211,6 +219,15 @@ export interface Registry {
   register: (spec: AnyToolSpec) => boolean;
 }
 
+/** MCP Apps (extension io.modelcontextprotocol/ui): hosts declare it with the HTML view mime type at initialize. */
+export const MCP_APP_MIME = "text/html;profile=mcp-app";
+const MAX_UI_PAYLOAD = 4_000_000;
+function clientSupportsApps(server: McpServer): boolean {
+  const caps = server.server.getClientCapabilities() as { extensions?: Record<string, { mimeTypes?: unknown }> } | undefined;
+  const mimeTypes = caps?.extensions?.["io.modelcontextprotocol/ui"]?.mimeTypes;
+  return Array.isArray(mimeTypes) && mimeTypes.includes(MCP_APP_MIME);
+}
+
 export function createRegistry(server: McpServer, ctx: ToolContext): Registry {
   const confirm = new ConfirmTokens(ctx.config.confirmSecret);
   const registered = new Map<string, RegisteredTool>();
@@ -236,6 +253,7 @@ export function createRegistry(server: McpServer, ctx: ToolContext): Registry {
           idempotentHint: spec.access === "read" || Boolean(spec.idempotent),
           openWorldHint: true,
         },
+        ...(spec.meta ? { _meta: spec.meta } : {}),
       },
       async (rawArgs: Record<string, unknown>) => {
         const { confirm_token, ...args } = rawArgs as Record<string, unknown> & { confirm_token?: string };
@@ -261,7 +279,11 @@ export function createRegistry(server: McpServer, ctx: ToolContext): Registry {
             if (spec.access === "write")
               await ctx.audit.record({ tool: spec.name, access: "write", phase: "executed", args, result: privateSummary(result, ctx.config, args) });
           }
-          return { content: [{ type: "text" as const, text: formatResult(result, ctx.config) }] };
+          const ui = result.structured && clientSupportsApps(server) && JSON.stringify(result.structured).length <= MAX_UI_PAYLOAD;
+          return {
+            content: [{ type: "text" as const, text: formatResult(result, ctx.config) }],
+            ...(ui ? { structuredContent: result.structured } : {}),
+          };
         } catch (err) {
           if (spec.access !== "read")
             await ctx.audit.record({
