@@ -7,6 +7,7 @@ import { analyzeActionBacklog, isOverdue, loadActions, wholeDays } from "../anal
 import { analyzeScheduleCompliance } from "../analytics/schedule-compliance.js";
 import { isoDay, siteKey } from "../analytics/trend.js";
 import type { Cell, Tile } from "./model.js";
+import { fmtInstant } from "./model.js";
 
 /**
  * Data sections shared by the reports. Every figure comes from the core analytics pure functions
@@ -125,5 +126,5 @@ export function scheduleSummary(cache: CacheReader, period: string, siteIds: str
 }
 
 export function coverageTable(cache: CacheReader, feeds: FeedName[]): Cell[][] {
-  return coverage(cache, feeds).map((c) => [c.feed, c.rows, c.last_synced_at ?? "never synced", c.complete ? "complete" : c.last_synced_at ? "partial (row cap)" : "missing"]);
+  return coverage(cache, feeds).map((c) => [c.feed, c.rows, c.last_synced_at ? fmtInstant(c.last_synced_at) : "never synced", c.complete ? "complete" : c.last_synced_at ? "partial (row cap)" : "missing"]);
 }
