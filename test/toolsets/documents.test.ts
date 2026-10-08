@@ -44,7 +44,7 @@ describe("documents toolset", () => {
     ]);
   });
 
-  it("lists folder items, defaulting to the root folder", async () => {
+  it("lists folder items and requires a folder id (the live API has no root listing)", async () => {
     const api = new MockApi().on("POST /documents/v1/children", { folders: [], files: [file], total: 1 });
     const { call, json } = await connect(api);
     const res = await call("sc_list_folder_items", { folder_id: "folder-1" });
@@ -59,9 +59,7 @@ describe("documents toolset", () => {
     const api2 = new MockApi().on("POST /documents/v1/children", { folders: [folder], files: [], total: 1 });
     const second = await connect(api2);
     const root = await second.call("sc_list_folder_items", {});
-    expect(root.isError).toBe(false);
-    expect(api2.calls[0]!.body).toMatchObject({ page_size: 50 });
-    expect("parent_id" in (api2.calls[0]!.body as Record<string, unknown>)).toBe(false);
-    expect(second.json(root.text).folders).toHaveLength(1);
+    expect(root.isError).toBe(true);
+    expect(api2.calls).toHaveLength(0);
   });
 });

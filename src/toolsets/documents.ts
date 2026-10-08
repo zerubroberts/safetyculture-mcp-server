@@ -110,9 +110,9 @@ export const documentsTools = [
     toolset: "documents",
     access: "read",
     description:
-      "Lists the files and folders inside one Documents folder. Omit the folder ID to list the root folder. Returns compact rows with folder path, file size, validity dates and expiry status.",
+      "Lists the files and folders inside one Documents folder (the API has no root listing: find top-level folders with sc_search_documents first). Returns compact rows with folder path, file size, validity dates and expiry status.",
     input: {
-      folder_id: z.string().optional().describe("Folder ID to list. Omit to list the root folder."),
+      folder_id: z.string().min(1).describe("Folder ID to list (from sc_search_documents or a previous listing)."),
       archived: z.boolean().optional().describe("Pass true to list only archived items. Default: unarchived only."),
       limit: P.limit(50, 100),
       page_token: P.pageToken,
@@ -125,7 +125,7 @@ export const documentsTools = [
         page_token: a.page_token,
       });
       const data = shape(res);
-      const where = a.folder_id ? `folder ${a.folder_id}` : "the root folder";
+      const where = `Folder ${a.folder_id}`;
       return {
         summary: `${where} holds ${data.total ?? data.folders.length + data.files.length} items (${data.folders.length} folders, ${data.files.length} files).${data.next_page_token ? " More available: pass next_page_token." : ""}`,
         data,

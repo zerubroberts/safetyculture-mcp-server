@@ -29,12 +29,16 @@ d("live read-only smoke", () => {
   it("every no-argument read tool succeeds or reports an unlicensed module", async () => {
     const tools = (await c.client.listTools()).tools.filter((t) => !(t.inputSchema.required ?? []).length);
     const skip = new Set(["sc_enable_toolsets", "sc_query_cache"]);
+    const broken: string[] = [];
     for (const t of tools) {
       if (skip.has(t.name)) continue;
       const r = await c.call(t.name, {});
-      results.push([t.name, shape(r)]);
-      if (r.isError) expect(r.text, t.name).toMatch(MODULE_UNAVAILABLE);
+      // Error text is a plain-English API/tool message (no record data), safe to log in short form.
+      const kind = !r.isError ? "" : MODULE_UNAVAILABLE.test(r.text) ? " [module unavailable]" : /^(Mitti API|Unexpected)/.test(r.text) ? ` [BUG] ${r.text.slice(0, 160)}` : " [input guard]";
+      results.push([t.name, shape(r) + kind]);
+      if (kind.startsWith(" [BUG]")) broken.push(t.name);
     }
+    expect(broken, `tools with real API errors: ${broken.join(", ")}`).toEqual([]);
   });
 
   it("never leaks the token or support hashes", async () => {
