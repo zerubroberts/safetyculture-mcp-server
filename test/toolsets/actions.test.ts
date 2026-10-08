@@ -56,7 +56,7 @@ describe("actions toolset", () => {
 
   it("delete is two-step: dry run first, then exact-args confirm", async () => {
     const api = new MockApi()
-      .on("^/tasks/v1/actions/[^/]+$", task("x"))
+      .on("GET ^/tasks/v1/actions/[^/]+$", task("x"))
       .on("POST /tasks/v1/actions/delete", {});
     const { call } = await connect(api, { SC_MODE: "full" });
     const dry = await call("sc_delete_actions", { action_ids: ["x"] });

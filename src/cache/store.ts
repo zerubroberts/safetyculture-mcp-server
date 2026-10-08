@@ -9,7 +9,12 @@ import { sqlite } from "./sqlite.js";
 /** First 16 hex chars of sha256(organisation_id): names the cache file without revealing the org. */
 export const orgFingerprint = (organisationId: string) => createHash("sha256").update(organisationId).digest("hex").slice(0, 16);
 
-export const cacheFilePath = (dataDir: string, organisationId: string) => join(dataDir, "cache", `${orgFingerprint(organisationId)}.sqlite`);
+/**
+ * One cache per organisation AND per Mitti user: API tokens carry their user's permissions, so a
+ * cache filled by one user's token must never be readable through another user's token.
+ */
+export const cacheFilePath = (dataDir: string, organisationId: string, userId?: string) =>
+  join(dataDir, "cache", `${orgFingerprint(organisationId)}${userId ? `-${orgFingerprint(userId).slice(0, 8)}` : ""}.sqlite`);
 
 export const tableName = (feed: FeedName) => {
   if (!(feed in FEEDS)) throw new Error(`Unknown feed ${feed}`);

@@ -7,7 +7,7 @@ import { createRegistry, defineTool, formatResult, selectTools, TOOLSETS, type A
 import { registerPrompts } from "./prompts.js";
 import { registerResources } from "./resources.js";
 import { AuditLog } from "./security/audit.js";
-import { setPseudonymKey } from "./security/redact.js";
+import { registerSecret, setPseudonymKey } from "./security/redact.js";
 import { ALL_TOOLS } from "./toolsets/index.js";
 import { VERSION } from "./version.js";
 
@@ -32,6 +32,8 @@ export function buildServer(config: Config, opts: { fetch?: typeof fetch; tools?
     { instructions: SERVER_INSTRUCTIONS, capabilities: { tools: { listChanged: true }, resources: {}, prompts: {}, logging: {} } },
   );
   setPseudonymKey(process.env.SC_PSEUDONYM_KEY ?? config.apiToken);
+  registerSecret(config.apiToken);
+  registerSecret(config.http.bearerToken);
   const ctx: ToolContext = {
     client: new ScClient(config, opts.fetch),
     config,

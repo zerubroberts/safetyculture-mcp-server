@@ -3,13 +3,14 @@ import { ToolError } from "../core/errors.js";
 
 export const QUERY_ROW_CAP = 500;
 export const QUERY_TIMEOUT_MS = 10_000;
+export const QUERY_MAX_BYTES = 8_000_000;
 
 // Statements and functions that write, change connection state or reach outside the cache file.
 // REPLACE is only rejected as a statement (replace() the string function is fine).
 const FORBIDDEN: Array<[RegExp, string]> = [
   [/\battach\b/i, "ATTACH"],
   [/\bdetach\b/i, "DETACH"],
-  [/\bpragma\b/i, "PRAGMA"],
+  [/\bpragma/i, "PRAGMA (including pragma_ table functions)"],
   [/\binsert\b/i, "INSERT"],
   [/\bupdate\b/i, "UPDATE"],
   [/\bdelete\b/i, "DELETE"],
@@ -156,7 +157,13 @@ export function runReadOnlyQuery(
       () => finish(() => reject(new ToolError(`Query stopped after ${Math.round(timeoutMs / 100) / 10} s. Add filters or a LIMIT, or aggregate in SQL.`))),
       timeoutMs,
     );
-    child.stdout.setEncoding("utf8").on("data", (c: string) => (stdout += c));
+    child.stdout.setEncoding("utf8").on("data", (c: string) => {
+      stdout += c;
+      // Rows are capped by count in the child; this caps total bytes so one huge row cannot
+      // exhaust the server's memory.
+      if (stdout.length > QUERY_MAX_BYTES)
+        finish(() => reject(new ToolError(`Query result is larger than ${QUERY_MAX_BYTES / 1_000_000} MB. Select fewer or shorter columns, or aggregate in SQL.`)));
+    });
     child.stderr.setEncoding("utf8").on("data", (c: string) => (stderr += c.slice(0, 2000)));
     child.on("error", (err) => finish(() => reject(new ToolError(`Could not start the query process: ${err.message}`))));
     child.on("close", () =>

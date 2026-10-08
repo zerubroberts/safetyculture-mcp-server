@@ -18,9 +18,9 @@ export function createCacheProvider(ctx: Ctx): CacheProvider {
 
   const open = (): Promise<SqliteCache> => {
     opening ??= (async () => {
-      const me = await ctx.client.get<{ organisation_id?: string }>("/accounts/user/v1/user:WhoAmI");
+      const me = await ctx.client.get<{ organisation_id?: string; user_id?: string }>("/accounts/user/v1/user:WhoAmI");
       if (!me.organisation_id) throw new ToolError("Could not determine the organisation for this API token (WhoAmI returned no organisation_id).");
-      return new SqliteCache(cacheFilePath(ctx.config.dataDir, me.organisation_id));
+      return new SqliteCache(cacheFilePath(ctx.config.dataDir, me.organisation_id, me.user_id));
     })().catch((err) => {
       opening = undefined;
       throw err;

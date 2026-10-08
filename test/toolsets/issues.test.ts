@@ -130,14 +130,20 @@ describe("issues toolset", () => {
     ]);
   });
 
-  it("returns PDF and web report links", async () => {
+  it("report tool is read-only (PDF only); the public web link is a separate write tool", async () => {
     const api = new MockApi()
       .on("GET /tasks/v1/incidents/i1/pdf_report", { url: "https://example.test/i1.pdf" })
       .on("POST /tasks/v1/shared_link/i1/web_report", { url: "https://example.test/i1-web" });
-    const { call, json } = await connect(api);
-    const res = await call("sc_get_issue_report", { issue_id: "i1" });
+    const ro = await connect(api);
+    const res = await ro.call("sc_get_issue_report", { issue_id: "i1" });
     expect(res.isError).toBe(false);
-    expect(json(res.text)).toMatchObject({ id: "i1", pdf_url: "https://example.test/i1.pdf", web_report_url: "https://example.test/i1-web" });
+    expect(ro.json(res.text)).toMatchObject({ id: "i1", pdf_url: "https://example.test/i1.pdf" });
+    expect(api.calls.some((c) => c.path.endsWith("/web_report"))).toBe(false);
+    expect((await ro.client.listTools()).tools.map((t) => t.name)).not.toContain("sc_create_issue_share_link");
+
+    const rw = await connect(api, { SC_MODE: "write" });
+    const link = await rw.call("sc_create_issue_share_link", { issue_id: "i1" });
+    expect(rw.json(link.text)).toMatchObject({ web_report_url: "https://example.test/i1-web" });
     expect(api.calls.find((c) => c.path.endsWith("/web_report"))!.body).toEqual({});
   });
 

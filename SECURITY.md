@@ -31,7 +31,7 @@ API tokens act with the permissions of the user who created them. Create a dedic
 | 4 | Token sent to another host (crafted `next_page`, raw paths, media links) | Client refuses any URL whose origin differs from the configured base URL. `sc_api_get` only accepts allowlisted path prefixes. |
 | 5 | Replayed or altered destructive call | Confirm tokens are HMAC-bound to tool + canonical arguments, single use, 10-minute expiry, per-process secret. |
 | 6 | Personal data reaching model providers | Default pseudonymisation of contact details; strict mode; exports apply the same policy. |
-| 7 | Cross-tenant leakage over HTTP | Stateless per-request servers; per-request tokens off by default; cache files keyed by organisation fingerprint. Run one deployment per organisation. |
+| 7 | Cross-tenant or cross-user leakage over HTTP | Stateless per-request servers; per-request tokens off by default; the analytics cache is keyed by organisation AND Mitti user, so one user's token can never read data cached by another's; pseudonym keys are derived per token; confirm tokens are single-use process-wide. Run one deployment per organisation. |
 | 8 | Spreadsheet formula injection in exports | CSV cells starting with `= + - @` (or tab/CR) are prefixed with an apostrophe. |
 | 9 | Script injection in generated HTML reports | All user text HTML-escaped; reports contain no scripts or external resources. |
 | 10 | Supply chain | Two runtime dependencies (`@modelcontextprotocol/sdk`, `zod`); lockfile committed; npm provenance on release; CI leak guard. |

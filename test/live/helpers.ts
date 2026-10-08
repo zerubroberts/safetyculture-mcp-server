@@ -36,8 +36,9 @@ export async function liveClient(mode: "read-only" | "write" | "full" = "read-on
 
 function parse(text: string): any {
   try {
-    const inner = text.includes("<untrusted-data>") ? text.split("<untrusted-data>\n")[1]!.split("\n</untrusted-data>")[0]! : text.slice(text.indexOf("\n\n") + 2);
-    return JSON.parse(inner.split("\n\nNote: output trimmed")[0]!);
+    const body = text.split("\n\nNote: output trimmed")[0]!;
+    const inner = body.includes("<untrusted-data>") ? body.split("<untrusted-data>\n")[1]!.split("\n</untrusted-data>")[0]! : body;
+    return JSON.parse(inner.split("\n").pop()!);
   } catch {
     return undefined;
   }

@@ -41,7 +41,8 @@ describe("feeds toolset", () => {
     expect(data.total_duration_ms).toBeGreaterThanOrEqual(0);
 
     const status = json((await call("sc_sync_status", {})).text);
-    expect(status.cache_file).toContain(`${orgFingerprint(ORG)}.sqlite`);
+    expect(status.cache_file).toContain(`${orgFingerprint(ORG)}`);
+    expect(status.cache_file).toMatch(/\.sqlite$/);
     expect(status.cache_file.startsWith(config.dataDir)).toBe(true);
     expect(status.size_bytes).toBeGreaterThan(0);
     const insp = status.feeds.find((f: { feed: string }) => f.feed === "inspections");

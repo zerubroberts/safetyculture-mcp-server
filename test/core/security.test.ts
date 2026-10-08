@@ -74,3 +74,14 @@ describe("phone masking does not eat dates or ids", () => {
     expect(out.note).toBe("call [phone] or [phone]");
   });
 });
+
+describe("confirm token hardening", () => {
+  it("rejects tampered encodings and replays across instances", () => {
+    const a = new ConfirmTokens("shared-secret");
+    const t = a.issue("sc_delete_actions", { ids: ["x"] });
+    for (const bad of [`${t}.x`, `0${t}`, ` ${t}`, `${t} `, t.replace(".", "..")]) expect(a.verify("sc_delete_actions", { ids: ["x"] }, bad)).toBe(false);
+    expect(a.verify("sc_delete_actions", { ids: ["x"] }, t)).toBe(true);
+    const b = new ConfirmTokens("shared-secret"); // e.g. the next HTTP request's registry
+    expect(b.verify("sc_delete_actions", { ids: ["x"] }, t)).toBe(false);
+  });
+});

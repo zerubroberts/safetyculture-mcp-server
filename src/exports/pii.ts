@@ -1,5 +1,8 @@
 import type { PiiLevel } from "../core/config.js";
-import { pseudonym } from "../security/redact.js";
+import { maskText, pseudonym } from "../security/redact.js";
+
+// Columns produced by this server's own projections that hold a person's display name.
+const PERSON_COL = /^(user|creator|owner|author|inspector|assignee|assignees|created_by|completed_by|person|user_full_name|owner_full_name)$/i;
 
 /**
  * Column-based privacy policy for exported files (same levels as tool output, see SC_PII):
@@ -33,10 +36,13 @@ export function applyPii(row: Record<string, unknown>, pii: PiiLevel): Record<st
         out[k] = "[phone]";
         continue;
       }
-      if (pii === "strict" && NAME_COL.test(k) && !EMAIL_COL.test(k)) {
+      if (pii === "strict" && (NAME_COL.test(k) || PERSON_COL.test(k)) && !EMAIL_COL.test(k)) {
         out[k] = pseudonym(v, "person");
         continue;
       }
+      // Free text (titles, notes, JSON columns): emails and phone numbers typed into it are masked too.
+      out[k] = maskText(v, pii);
+      continue;
     }
     out[k] = v;
   }

@@ -90,8 +90,19 @@ export const coreTools = [
       query: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
     },
     run: async ({ path, query }, ctx) => {
-      if (path.includes("..") || /^\/\//.test(path)) throw new ToolError("Invalid path.");
-      if (!GET_ALLOWLIST.some((p) => path.startsWith(p)))
+      // Check the path the server would actually request: decode, then let the URL parser resolve
+      // dot segments. Anything that changes under normalisation (%2e%2e, backslashes, double
+      // encoding) is rejected rather than "fixed", so the allowlist cannot be walked around.
+      let decoded: string;
+      try {
+        decoded = decodeURIComponent(path);
+      } catch {
+        throw new ToolError("Invalid path encoding.");
+      }
+      const resolved = new URL(path, "https://path-check.invalid").pathname;
+      if (/[?#\\]/.test(path) || /^\/\//.test(path) || decoded.includes("..") || decoded.includes("%") || decodeURIComponent(resolved) !== decoded)
+        throw new ToolError("Invalid path. Pass a plain API path without dot segments, encoding tricks or a query string (use `query` for parameters).");
+      if (!GET_ALLOWLIST.some((p) => decoded.startsWith(p)))
         throw new ToolError(`Path not allowed. Allowed prefixes: ${GET_ALLOWLIST.join(", ")}`);
       const data = await ctx.client.get(path, query);
       return { summary: `GET ${path} succeeded.`, data, untrusted: true };

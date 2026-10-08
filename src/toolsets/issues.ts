@@ -332,20 +332,32 @@ export const issuesTools = [
 
   defineTool({
     name: "sc_get_issue_report",
-    title: "Get issue report links",
+    title: "Get issue PDF report",
     toolset: "issues",
     access: "read",
-    description: "Returns download links for one issue's report: a PDF export URL and a shareable web report URL.",
+    description: "Returns a download URL for one issue's PDF report (the URL expires) and the issue's app link. To create a public web link, use sc_create_issue_share_link.",
     input: { issue_id: P.issueId },
     run: async ({ issue_id }, ctx) => {
-      const id = encodeURIComponent(issue_id);
-      const [pdf, web] = await Promise.all([
-        ctx.client.get<{ url?: string }>(`/tasks/v1/incidents/${id}/pdf_report`),
-        ctx.client.post<{ url?: string }>(`/tasks/v1/shared_link/${id}/web_report`, {}),
-      ]);
+      const pdf = await ctx.client.get<{ url?: string }>(`/tasks/v1/incidents/${encodeURIComponent(issue_id)}/pdf_report`);
       return {
-        summary: "Generated the issue's PDF and web report links.",
-        data: { id: issue_id, pdf_url: pdf.url, web_report_url: web.url, link: links.issue(issue_id) },
+        summary: "Generated the issue's PDF report link.",
+        data: { id: issue_id, pdf_url: pdf.url, link: links.issue(issue_id) },
+      };
+    },
+  }),
+
+  defineTool({
+    name: "sc_create_issue_share_link",
+    title: "Create public issue web report link",
+    toolset: "issues",
+    access: "write",
+    description: "Creates a public web report link for one issue. Anyone holding the link can view the report without signing in, so only create one when the user asks to share it.",
+    input: { issue_id: P.issueId },
+    run: async ({ issue_id }, ctx) => {
+      const web = await ctx.client.post<{ url?: string }>(`/tasks/v1/shared_link/${encodeURIComponent(issue_id)}/web_report`, {});
+      return {
+        summary: "Created a public web report link. Treat it like a password: anyone with it can view the issue report.",
+        data: { id: issue_id, web_report_url: web.url },
       };
     },
   }),

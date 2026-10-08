@@ -13,6 +13,8 @@ describe("query guard", () => {
     ["WITH x AS (SELECT 1) DELETE FROM feed_sites", /DELETE/],
     ["WITH x AS (SELECT 1) INSERT INTO feed_sites SELECT * FROM x", /INSERT/],
     ["SELECT 1; SELECT 2", /one statement/],
+    ["SELECT * FROM pragma_table_info('feed_sites')", /PRAGMA/],
+    ["SELECT file FROM pragma_database_list", /PRAGMA/],
     ["SELECT 1 /* hidden */; DROP TABLE feed_sites", /one statement/],
     ["SELECT load_extension('evil')", /load_extension/],
     ["REPLACE INTO feed_sites VALUES (1,2,3)", /SELECT/],
@@ -28,7 +30,6 @@ describe("query guard", () => {
     "SELECT replace(id, 'a', 'b') FROM feed_sites",
     "SELECT 'drop; table; attach' AS text_is_data",
     "SELECT \"updated\" FROM (SELECT 1 AS \"updated\") -- trailing comment",
-    "SELECT * FROM pragma_table_info('feed_sites')",
   ])("accepts %s", (sql) => {
     expect(() => guardQuery(sql)).not.toThrow();
   });

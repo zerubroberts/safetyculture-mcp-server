@@ -72,8 +72,10 @@ export async function connect(api: MockApi, env: Record<string, string> = {}, to
   };
   /** Parses the JSON block of a tool result (works for plain and untrusted-wrapped output). */
   const json = (text: string) => {
-    const inner = text.includes("<untrusted-data>") ? text.split("<untrusted-data>\n")[1]!.split("\n</untrusted-data>")[0]! : text.slice(text.indexOf("\n\n") + 2);
-    return JSON.parse(inner.split("\n\nNote: output trimmed")[0]!);
+    const body = text.split("\n\nNote: output trimmed")[0]!;
+    const inner = body.includes("<untrusted-data>") ? body.split("<untrusted-data>\n")[1]!.split("\n</untrusted-data>")[0]! : body;
+    // Output is "summary\n\n<compact JSON>": the JSON is always the last line.
+    return JSON.parse(inner.split("\n").pop()!);
   };
   return { client, call, json, config, close: () => client.close() };
 }
