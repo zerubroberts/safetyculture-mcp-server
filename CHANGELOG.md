@@ -12,6 +12,9 @@ Complete rewrite of the 2025 Python prototype (6 tools) as a TypeScript MCP serv
 - Exports: CSV/JSONL datasets, Power BI / Qlik star-schema bundle, read-only SQL over the cache, Slack and Teams posting to operator-allowlisted webhooks.
 - Transports: stdio and stateless Streamable HTTP with bearer and Origin checks; Dockerfile.
 - CLI: `doctor`, `tools`, `config <client>`, `--demo`.
+- Demo organisation (`--demo` / `SC_DEMO=true`): a fictional company with a year of synthetic data, served for every read tool.
+- Claude Desktop one-click extension (`safetyculture-mcp.mcpb`) attached to each release.
+- MCP Registry metadata (`server.json`).
 - MCP prompts for weekly safety review, audit readiness, failed-item actions, change investigation, credential check, template hygiene.
 
 ### Security

@@ -29,6 +29,8 @@ Then add it to your AI client with `--demo` and ask *"Give me the Monday safety 
 
 You need Node.js 22.13+ and a Mitti API token ([make a least-privilege one](docs/guides/api-token.md)).
 
+**Claude Desktop, one click:** download `safetyculture-mcp.mcpb` from the [latest release](https://github.com/zerubroberts/safetyculture-mcp-server/releases/latest) and double-click it. Claude asks for the token (or tick Demo mode).
+
 <table>
 <tr><td><b>Claude Code</b></td><td>
 
