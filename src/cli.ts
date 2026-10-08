@@ -75,7 +75,7 @@ async function doctor(env: NodeJS.ProcessEnv): Promise<number> {
   }
   const tools = selectTools(ALL_TOOLS, cfg);
   const by = (a: string) => tools.filter((t) => t.access === a).length;
-  out(`✓ ${tools.length} tools will be exposed: ${by("read")} read, ${by("write")} write, ${by("destructive")} destructive`);
+  out(`✓ ${tools.length + 2} tools will be exposed: ${by("read") + 2} read, ${by("write")} write, ${by("destructive")} destructive`);
   out(`  audit log: ${cfg.auditLog}`);
   return 0;
 }
