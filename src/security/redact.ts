@@ -48,9 +48,16 @@ const PHONE = /(?<![\w:-])(?:\+|\()?\d[\d\s().-]{7,}\d(?![\w:-])/g;
 // Exact secret values known to this process (the configured API token, HTTP bearer, per-request
 // tokens). Pattern matching alone misses tokens in non-standard formats.
 const knownSecrets = new Set<string>();
+// Operator secrets (startup token, HTTP bearer) are pinned: per-request tokens can never evict them.
+const pinnedSecrets = new Set<string>();
 const MAX_KNOWN_SECRETS = 200;
-export function registerSecret(value: string | undefined): void {
+export function registerSecret(value: string | undefined, opts: { pin?: boolean } = {}): void {
   if (!value || value.length < 8) return;
+  if (opts.pin) {
+    pinnedSecrets.add(value);
+    return;
+  }
+  if (pinnedSecrets.has(value)) return;
   knownSecrets.delete(value);
   knownSecrets.add(value);
   // Per-request HTTP tokens must not grow the set forever: drop the oldest.
@@ -60,7 +67,7 @@ export function registerSecret(value: string | undefined): void {
 /** Removes known secrets and anything that looks like an API token or bearer header from free text. */
 export function redactSecrets(text: string): string {
   let out = text;
-  for (const secret of knownSecrets) if (out.includes(secret)) out = out.replaceAll(secret, "[redacted-secret]");
+  for (const set of [pinnedSecrets, knownSecrets]) for (const secret of set) if (out.includes(secret)) out = out.replaceAll(secret, "[redacted-secret]");
   for (const p of TOKEN_PATTERNS) out = out.replace(p, "[redacted-secret]");
   return out;
 }
@@ -195,6 +202,8 @@ export function sanitize<T>(value: T, pii: PiiLevel, opts: SanitizeOpts = {}): T
     const keys = Object.keys(obj).map((k) => k.toLowerCase());
     const isPerson = personContext || keys.some((k) => PERSON_ID_KEY.test(k)) || keys.includes("firstname") || keys.includes("first_name");
     const isSignature = typeof obj.type === "string" && /signature/i.test(obj.type);
+    // Analytics rows grouped by a person (assignee, inspector) carry group_kind: "person".
+    const isPersonRow = obj.group_kind === "person" || obj.kind === "person";
     if (pii === "strict" && collect) {
       // Record full names too, so "Alex Carter" in a summary is replaced as a whole.
       for (const [f, l] of [["firstname", "lastname"], ["first_name", "last_name"], ["subject_user_first_name", "subject_user_last_name"]] as const) {
@@ -216,7 +225,8 @@ export function sanitize<T>(value: T, pii: PiiLevel, opts: SanitizeOpts = {}): T
         pii === "strict" &&
         typeof v === "string" &&
         v &&
-        (PERSON_VALUE_KEYS.has(lk) || (isPerson && lk === "name") || (isSignature && (lk === "response" || lk === "answer" || lk === "value")))
+        (PERSON_VALUE_KEYS.has(lk) || (isPerson && lk === "name") || (isSignature && (lk === "response" || lk === "answer" || lk === "value")) ||
+          (isPersonRow && (lk === "group" || lk === "label" || lk === "name" || lk === "group_name")))
       ) {
         out[k] = person(v);
         continue;

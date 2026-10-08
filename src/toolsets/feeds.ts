@@ -248,6 +248,10 @@ export const feedsTools: AnyToolSpec[] = [
       limit: P.limit(QUERY_ROW_CAP, QUERY_ROW_CAP),
     },
     run: async ({ sql, limit }, ctx) => {
+      // Raw SQL returns whatever columns the query builds (e.g. firstname || lastname), so strict
+      // privacy cannot be guaranteed for it: fail closed instead of leaking names.
+      if (ctx.config.pii === "strict")
+        throw new ToolError("sc_query_cache is disabled when SC_PII=strict, because ad-hoc SQL can rebuild names the privacy policy would hide. Use the analytics or export tools instead.");
       const store = asSqlite(await ctx.cache.open());
       const res = await runReadOnlyQuery(store.path, sql, { rowCap: limit ?? QUERY_ROW_CAP });
       return {

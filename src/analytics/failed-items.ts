@@ -147,6 +147,8 @@ export interface FailedItemsArgs {
 
 export interface ParetoRow {
   group: string;
+  /** "person" when grouped by inspector, so strict privacy pseudonymises the group name. */
+  group_kind: string;
   key: string;
   template?: string;
   failed: number;
@@ -267,6 +269,7 @@ export function analyzeFailedItems(cache: CacheReader, args: FailedItemsArgs, no
     const examples = [...a.latest.entries()].sort((x, y) => y[1] - x[1] || x[0].localeCompare(y[0])).slice(0, 3);
     return {
       group: a.label,
+      group_kind: groupBy === "inspector" ? "person" : groupBy,
       key,
       template: a.template,
       failed: a.failed,

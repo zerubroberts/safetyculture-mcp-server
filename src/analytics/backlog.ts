@@ -177,6 +177,8 @@ export interface BacklogArgs {
 
 export interface BacklogRow {
   group: string;
+  /** "person" when grouped by assignee, so strict privacy pseudonymises the group name. */
+  group_kind: string;
   key: string;
   open: number;
   overdue: number;
@@ -271,7 +273,7 @@ export function analyzeActionBacklog(
       seen.add(key);
       let g = groups.get(key);
       if (!g) {
-        g = { group: name, key, open: 0, overdue: 0, no_due_date: 0, age_0_7: 0, age_8_30: 0, age_31_90: 0, age_90_plus: 0, oldest_age_days: null };
+        g = { group: name, group_kind: groupBy === "assignee" ? "person" : groupBy, key, open: 0, overdue: 0, no_due_date: 0, age_0_7: 0, age_8_30: 0, age_31_90: 0, age_90_plus: 0, oldest_age_days: null };
         groups.set(key, g);
       }
       g.open++;

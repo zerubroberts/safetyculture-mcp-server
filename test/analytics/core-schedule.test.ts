@@ -111,10 +111,10 @@ describe("analyzeScheduleCompliance", () => {
     expect(analyzeScheduleCompliance(fixture(), { template_ids: ["template_t1"] }, NOW).result.metrics).toMatchObject({ due: 8, compliance_pct: 60 });
   });
 
-  it("empty occurrences feed: says there is no scheduling data instead of reporting zeros", () => {
+  it("synced, empty occurrences feed: nothing was scheduled, no rate (never 0% or 100%)", () => {
     const c = new FakeCache().seed("schedule_occurrences", []).seed("schedules", []);
     const { result, summary } = analyzeScheduleCompliance(c, {}, NOW);
-    expect(summary).toMatch(/^No scheduling data/);
+    expect(summary).toMatch(/^Nothing was scheduled/);
     expect(result.metrics.compliance_pct).toBeNull();
     expect(result.metrics.due).toBeNull();
     expect(result.table).toEqual([]);

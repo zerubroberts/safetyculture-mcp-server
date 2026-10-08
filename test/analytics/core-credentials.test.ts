@@ -77,10 +77,11 @@ describe("analyzeCredentialRadar", () => {
     expect(noExpired.caveats.some((c) => c.startsWith("1 expired credentials are hidden"))).toBe(true);
   });
 
-  it("empty feed says so", () => {
+  it("synced, empty feed is a true zero", () => {
     const { summary, result } = analyzeCredentialRadar(new FakeCache().seed("credentials", []).seed("users", []), {}, NOW);
-    expect(summary).toMatch(/^No credential data/);
-    expect(result.metrics.expired).toBeNull();
+    expect(summary).toMatch(/^No credentials are recorded/);
+    expect(result.metrics.expired).toBe(0);
+    expect(result.total).toBe(0);
     expect(result.table).toEqual([]);
   });
 

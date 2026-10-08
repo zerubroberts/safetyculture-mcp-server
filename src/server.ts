@@ -38,7 +38,7 @@ export function buildServer(config: Config, opts: { fetch?: typeof fetch; tools?
   const ctx: ToolContext = {
     client: new ScClient(config, opts.fetch ?? (config.demo ? createDemoFetch() : undefined)),
     config,
-    audit: new AuditLog(config.auditLog),
+    audit: new AuditLog(config.auditLog, config.pii),
     cache: undefined as unknown as ToolContext["cache"],
     now: () => new Date(),
   };

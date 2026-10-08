@@ -1,7 +1,7 @@
 import type { AnalyticResult, CacheReader } from "../cache/contract.js";
 import { ids } from "../core/params.js";
 import { parsePeriod } from "../core/time.js";
-import { bool, bounded, buildResult, nameMaps, str } from "./common.js";
+import { bool, bounded, buildResult, feedProblem, nameMaps, str, unavailableSentence } from "./common.js";
 import { canon, DAY } from "./failed-items.js";
 
 /**
@@ -50,7 +50,7 @@ export function analyzeCredentialRadar(
   summary: string;
   result: AnalyticResult<CredentialRow> & {
     /** Credentials in the full (uncut) table; `table` holds the most urgent `limit` of them. */
-    total: number;
+    total: number | null;
     /** True when the table or either rollup was cut to `limit`. */
     truncated: boolean;
     by_person: Array<{ person: string; user_id?: string; expired: number; within_7_days: number; within_30_days: number; within_90_days: number; total: number }>;
@@ -62,7 +62,10 @@ export function analyzeCredentialRadar(
   const feeds = ["credentials", "users"] as const;
   const filters = { horizon: args.horizon ?? "next 30 days", credential_types: args.credential_types, include_expired: includeExpired };
   const all = cache.rows("credentials");
-  if (!all.length) {
+  // Unreadable feed (403, never synced, still downloading): withhold every figure. An empty but
+  // synced feed is a real zero.
+  const problem = feedProblem(cache, "credentials");
+  if (problem || !all.length) {
     const result = buildResult<CredentialRow>({
       version: CREDENTIALS_VERSION,
       period: horizon,
@@ -71,11 +74,20 @@ export function analyzeCredentialRadar(
       feeds: [...feeds],
       metrics: { expired: null, within_7_days: null, within_30_days: null, within_90_days: null },
       table: [],
-      method: "Expiry radar needs the credentials feed; it has no rows.",
-      caveats: ["No credential data: the credentials feed is empty (module unused, no access, or not synced). This does not mean nothing is expiring."],
+      method: problem ? "Expiry radar needs the credentials feed; it could not be read." : "Expiry radar needs the credentials feed; it has no rows.",
+      caveats: [
+        problem
+          ? `No credential data: ${problem}. This does not mean nothing is expiring.`
+          : "The credentials feed is synced and empty: no credentials are recorded, so none are expiring.",
+      ],
       now,
     });
-    return { summary: "No credential data: the credentials feed is empty, so expiries cannot be checked.", result: { ...result, total: 0, truncated: false, by_person: [], by_type: [] } };
+    if (problem)
+      return { summary: unavailableSentence("Credential expiries", problem), result: { ...result, total: null, truncated: false, by_person: [], by_type: [] } };
+    return {
+      summary: "No credentials are recorded in this organisation (the feed is synced and empty), so none are expiring.",
+      result: { ...result, metrics: { expired: 0, within_7_days: 0, within_30_days: 0, within_90_days: 0 }, total: 0, truncated: false, by_person: [], by_type: [] },
+    };
   }
 
   const users = nameMaps(cache).users;

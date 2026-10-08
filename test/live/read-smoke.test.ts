@@ -34,7 +34,9 @@ d("live read-only smoke", () => {
       if (skip.has(t.name)) continue;
       const r = await c.call(t.name, {});
       // Error text is a plain-English API/tool message (no record data), safe to log in short form.
-      const kind = !r.isError ? "" : MODULE_UNAVAILABLE.test(r.text) ? " [module unavailable]" : /^(Mitti API|Unexpected)/.test(r.text) ? ` [BUG] ${r.text.slice(0, 160)}` : " [input guard]";
+      // API and unexpected errors arrive inside the untrusted envelope; classify on the inner text.
+      const inner = r.text.includes("<untrusted-data>\n") ? r.text.split("<untrusted-data>\n")[1]!.split("\n</untrusted-data>")[0]! : r.text;
+      const kind = !r.isError ? "" : MODULE_UNAVAILABLE.test(r.text) ? " [module unavailable]" : /^(Mitti API|Unexpected)/.test(inner) ? ` [BUG] ${inner.slice(0, 160)}` : " [input guard]";
       results.push([t.name, shape(r) + kind]);
       if (kind.startsWith(" [BUG]")) broken.push(t.name);
     }

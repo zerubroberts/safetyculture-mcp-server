@@ -1,6 +1,6 @@
 import type { AnalyticResult, CacheReader } from "../cache/contract.js";
 import { parsePeriod, type Period } from "../core/time.js";
-import { buildResult, field, nameMaps, str } from "./common.js";
+import { buildResult, feedProblem, field, nameMaps, str, unavailableSentence } from "./common.js";
 import { canon, idIn } from "./failed-items.js";
 import { pct } from "./stats.js";
 
@@ -160,6 +160,8 @@ export interface ScheduleArgs {
 
 export interface ComplianceRow extends ComplianceCounts {
   group: string;
+  /** "person" when grouped by assignee, so strict privacy pseudonymises the group name. */
+  group_kind: string;
   key: string;
   resolved: number;
   compliance_pct: number | null;
@@ -177,8 +179,9 @@ export function analyzeScheduleCompliance(
   const feeds = ["schedule_occurrences", "schedules", "schedule_assignees", "inspections"] as const;
   const filters = { site_ids: args.site_ids, template_ids: args.template_ids, group_by: groupBy };
   const totalRows = cache.rows("schedule_occurrences").length;
+  const problem = feedProblem(cache, "schedule_occurrences");
 
-  if (totalRows === 0) {
+  if (problem || totalRows === 0) {
     const result = buildResult<ComplianceRow>({
       version: SCHEDULE_VERSION,
       period,
@@ -187,11 +190,20 @@ export function analyzeScheduleCompliance(
       feeds: [...feeds],
       metrics: { due: null, on_time: null, late: null, missed: null, compliance_pct: null },
       table: [],
-      method: "Compliance needs schedule occurrences; none are cached.",
-      caveats: ["No scheduling data: the schedule occurrences feed has no rows (schedules unused, no access, or not synced). This is not 0% or 100% compliance."],
+      method: problem ? "Compliance needs schedule occurrences; the feed could not be read." : "Compliance needs schedule occurrences; none are cached.",
+      caveats: [
+        problem
+          ? `No scheduling data: ${problem}. This is not 0% or 100% compliance.`
+          : "The schedule occurrences feed is synced and empty: nothing was scheduled, so there is no compliance rate to report.",
+      ],
       now,
     });
-    return { summary: "No scheduling data: the schedule occurrences feed is empty, so compliance cannot be computed.", result: { ...result, worst: [] } };
+    return {
+      summary: problem
+        ? unavailableSentence("Schedule compliance", problem)
+        : "Nothing was scheduled (the schedule occurrences feed is synced and empty), so there is no compliance rate to report.",
+      result: { ...result, worst: [] },
+    };
   }
 
   const names = nameMaps(cache);
@@ -240,6 +252,7 @@ export function analyzeScheduleCompliance(
   }
   const row = (key: string, name: string, c: ComplianceCounts): ComplianceRow => ({
     group: name,
+    group_kind: groupBy === "assignee" ? "person" : groupBy,
     key,
     ...c,
     resolved: resolved(c),

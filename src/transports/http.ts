@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { createHash, timingSafeEqual } from "node:crypto";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import type { Config } from "../core/config.js";
-import { redactSecrets } from "../security/redact.js";
+import { redactSecrets, registerSecret } from "../security/redact.js";
 import { buildServer } from "../server.js";
 
 // Bind hosts and Origin hostnames. WHATWG URL keeps the brackets on IPv6 hostnames
@@ -46,9 +46,18 @@ export async function startHttp(config: Config, env: NodeJS.ProcessEnv = process
     throw new Error("Refusing to listen on a non-loopback address without SC_HTTP_BEARER_TOKEN. Set one, or bind to 127.0.0.1.");
   }
   const allowClientTokens = /^(1|true|yes)$/i.test(env.SC_HTTP_ALLOW_CLIENT_TOKENS ?? "");
+  registerSecret(config.apiToken, { pin: true });
+  registerSecret(bearerToken, { pin: true });
 
   const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
-    const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+    // Fixed base: a malformed Host header must never reach the URL parser (it would throw before
+    // any error handling and crash the process).
+    let url: URL;
+    try {
+      url = new URL(req.url ?? "/", "http://localhost");
+    } catch {
+      return send(res, 400, { error: "Bad request." });
+    }
     if (url.pathname === "/healthz") return send(res, 200, { ok: true });
     if (url.pathname !== "/mcp") return send(res, 404, { error: "Not found. The MCP endpoint is /mcp." });
 

@@ -44,7 +44,7 @@ describe("analytics toolset", () => {
     const { ctx, ensured } = ctxWith(cache);
     const out = await tool("sc_analyze_credential_radar").run({}, ctx);
     expect(ensured).toEqual([["credentials", "users"]]);
-    expect(out.summary).toMatch(/^No credential data/);
+    expect(out.summary).toMatch(/^No credentials are recorded/);
     expect(out.untrusted).toBe(true);
     expect(out.data).toMatchObject({ metric_version: "credential-radar/1", as_of: NOW.toISOString() });
   });

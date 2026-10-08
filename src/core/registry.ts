@@ -111,8 +111,9 @@ export function selectTools(all: AnyToolSpec[], cfg: Pick<Config, "mode" | "tool
 
 const keyCache = new Map<string, Buffer>();
 /** Pseudonym key for this config (per token), so concurrent HTTP tenants never share or re-key. */
-export function keyFor(cfg: Pick<Config, "apiToken">): Buffer {
+export function keyFor(cfg: Pick<Config, "apiToken">): Buffer | undefined {
   const seed = process.env.SC_PSEUDONYM_KEY ?? cfg.apiToken;
+  if (!seed) return undefined; // no token yet: the process default key applies
   let k = keyCache.get(seed);
   if (!k) {
     k = derivePseudonymKey(seed);
@@ -264,7 +265,7 @@ export function createRegistry(server: McpServer, ctx: ToolContext): Registry {
               args,
               error: err instanceof Error ? err.message : String(err),
             });
-          return { isError: true, content: [{ type: "text" as const, text: errorText(err) }] };
+          return { isError: true, content: [{ type: "text" as const, text: errorText(err, ctx.config) }] };
         }
       },
     );
@@ -276,8 +277,14 @@ export function createRegistry(server: McpServer, ctx: ToolContext): Registry {
   return { registered, specs, register };
 }
 
-export function errorText(err: unknown): string {
-  if (err instanceof ScApiError || err instanceof ToolError) return redactSecrets(err.message);
+/**
+ * Error text for the model. API errors and unexpected errors can quote upstream bodies (record
+ * text, names, emails), so they are masked with the privacy policy and wrapped as untrusted data.
+ */
+export function errorText(err: unknown, cfg?: Pick<Config, "pii" | "apiToken">): string {
+  const mask = (s: string) => (cfg ? maskText(s, cfg.pii, keyFor(cfg)) : redactSecrets(s));
+  if (err instanceof ToolError) return wrapUntrusted(mask(err.message));
   if (err instanceof z.ZodError) return `Invalid arguments: ${err.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`;
-  return redactSecrets(`Unexpected error: ${err instanceof Error ? err.message : String(err)}`);
+  if (err instanceof ScApiError) return wrapUntrusted(mask(err.message));
+  return wrapUntrusted(mask(`Unexpected error: ${err instanceof Error ? err.message : String(err)}`));
 }
