@@ -4,13 +4,13 @@ Updated 2026-10-08 by the orchestrator (Claude Opus 5.5, PC).
 
 ## Where we are
 - Waves 0, 1 and 2 DONE: 126 tools, cache + sync, 13 analytics, 3 reports, exports, demo org, MCPB extension, Docker, README, landing page (design judge SHIP 8.2/8.0), docs, FAQ, guides.
-- 603 unit tests (latest commit 1258ab8). Live Cast suite 6/6 on 2026-10-08 (read smoke, list->get, write cycle with 0 leftovers).
-- Security verification: pass 1 (6 fixed), Codex review (24 fixed), pass 2 (fixed), pass 3 (A-E + minor secret pinning fixed in 1258ab8, regression file test/core/pass3.test.ts).
+- 620 unit tests (latest commit 8224015). Live Cast suite 6/6 on 2026-10-08 (read smoke, list->get, write cycle with 0 leftovers).
+- Security verification: pass 1 (6 fixed), Codex review (24 fixed), pass 2 (fixed), pass 3 + 4 re-verification rounds, final CONFIRMED A-F (PRD-434; regressions in test/core/pass3.test.ts).
 - Data QA: independent auditor VERIFIED all metrics on demo + live.
-- Waiting on: Zerub's go to force-push fresh history to the public repo.
+- Waiting on: GATE-71 (Zerub's go to force-push fresh history to the public repo).
 
 ## Linear
-Project P-PRD-49. Wave 1 PRD-425 (+426..432), wave 2 PRD-433.
+Project P-PRD-49. Wave 1 PRD-425 (+426..432), wave 2 PRD-433 (+434 security). Publish decision GATE-71.
 
 ## Decisions (Zerub 2026-10-08)
 Name stays "SafetyCulture MCP"; publish = fresh history to the same repo after Zerub's final go; live write tests allowed (tiny, cleaned up).
