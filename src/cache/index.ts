@@ -46,7 +46,7 @@ export function createCacheProvider(ctx: Ctx): CacheProvider {
       const stale = store
         .details(feeds)
         .filter((s) => !s.last_synced_at || now - Date.parse(s.last_synced_at) > maxAgeMs)
-        .filter((s) => now - (lastAttempt.get(s.feed) ?? 0) > RETRY_BACKOFF_MS)
+        .filter((s) => inFlight.has(s.feed) || now - (lastAttempt.get(s.feed) ?? 0) > RETRY_BACKOFF_MS)
         .map((s) => s.feed);
       for (const f of stale) lastAttempt.set(f, now);
       const running = stale.map((feed) => {
