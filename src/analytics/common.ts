@@ -10,13 +10,21 @@ import { inPeriod, type Period } from "../core/time.js";
  */
 
 export function coverage(cache: CacheReader, feeds: FeedName[]): AnalyticResult["coverage"] {
-  return cache.status(feeds).map(({ feed, rows, last_synced_at, complete }) => ({ feed, rows, last_synced_at, complete }));
+  return cache.status(feeds).map(({ feed, rows, last_synced_at, complete, last_error }) => ({
+    feed,
+    rows,
+    last_synced_at,
+    complete,
+    ...(last_error?.startsWith("SYNCING") ? { note: "still syncing" } : {}),
+  }));
 }
 
 export function coverageCaveats(cov: AnalyticResult["coverage"]): string[] {
   const out: string[] = [];
   for (const c of cov) {
-    if (!c.last_synced_at) out.push(`Feed "${c.feed}" has never been synced, so related figures are missing, not zero.`);
+    if (c.note === "still syncing")
+      out.push(`Feed "${c.feed}" is still downloading for the first time (the Mitti API serves it slowly); these figures are partial. Ask again in a minute or two for complete numbers.`);
+    else if (!c.last_synced_at) out.push(`Feed "${c.feed}" has never been synced, so related figures are missing, not zero.`);
     else if (!c.complete) out.push(`Feed "${c.feed}" was only partially synced (row cap reached); totals may be understated.`);
     else if (c.rows === 0) out.push(`Feed "${c.feed}" is empty for this organisation (module unused or no access).`);
   }

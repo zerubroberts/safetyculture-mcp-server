@@ -1,6 +1,6 @@
 import type { CacheProvider, ToolContext } from "../core/registry.js";
 import { ToolError } from "../core/errors.js";
-import type { CacheWriter, FeedName } from "./contract.js";
+import type { CacheReader, CacheWriter, FeedName } from "./contract.js";
 import { cacheFilePath, SqliteCache } from "./store.js";
 import { syncAll, type FeedSyncReport, type SyncOptions } from "./sync.js";
 
@@ -28,6 +28,11 @@ export function createCacheProvider(ctx: Ctx): CacheProvider {
     return opening;
   };
 
+  // One in-flight sync per feed, shared by every caller, so a slow first sync started by one
+  // tool call keeps running in the background and later calls simply wait for it again.
+  const inFlight = new Map<FeedName, Promise<unknown>>();
+  const budgetMs = Number(process.env.SC_SYNC_BUDGET_MS ?? 40_000);
+
   return {
     open,
     async ensure(feeds, opts = {}) {
@@ -38,11 +43,38 @@ export function createCacheProvider(ctx: Ctx): CacheProvider {
         .details(feeds)
         .filter((s) => !s.last_synced_at || now - Date.parse(s.last_synced_at) > maxAgeMs)
         .map((s) => s.feed);
-      if (stale.length) await syncAll(ctx.client, store, stale, { now: ctx.now });
-      return store;
+      const running = stale.map((feed) => {
+        let p = inFlight.get(feed);
+        if (!p) {
+          p = syncAll(ctx.client, store, [feed], { now: ctx.now }).finally(() => inFlight.delete(feed));
+          p.catch(() => undefined);
+          inFlight.set(feed, p);
+        }
+        return p;
+      });
+      if (!running.length) return store;
+      let timer: NodeJS.Timeout | undefined;
+      const timedOut = await Promise.race([
+        Promise.allSettled(running).then(() => false),
+        new Promise<boolean>((r) => (timer = setTimeout(() => r(true), budgetMs))),
+      ]);
+      clearTimeout(timer);
+      if (!timedOut) return store;
+      return withSyncingNote(store, () => new Set(inFlight.keys()));
     },
   };
 }
+
+/** Marks feeds whose first sync is still running, so analytics say "partial, still syncing". */
+function withSyncingNote(store: SqliteCache, syncing: () => Set<FeedName>): CacheReader {
+  return {
+    rows: (feed, filter) => store.rows(feed, filter),
+    status: (feeds) =>
+      store.status(feeds).map((s) => (syncing().has(s.feed) ? { ...s, complete: false, last_error: SYNCING_NOTE } : s)),
+  };
+}
+
+export const SYNCING_NOTE = "SYNCING: still downloading in the background";
 
 /** Syncs feeds into the organisation's cache (used by sc_sync). Returns one report per feed. */
 export async function syncFeeds(ctx: ToolContext, feeds: FeedName[], opts: Omit<SyncOptions, "now"> = {}): Promise<{ store: SqliteCache; reports: FeedSyncReport[] }> {

@@ -125,7 +125,19 @@ export const feedsTools: AnyToolSpec[] = [
     run: async ({ feeds, full, max_rows }, ctx) => {
       const started = Date.now();
       const wanted = (feeds ?? DEFAULT_SYNC_FEEDS) as FeedName[];
-      const { reports } = await syncFeeds(ctx, wanted, { full, maxRows: max_rows });
+      const job = syncFeeds(ctx, wanted, { full, maxRows: max_rows });
+      job.catch(() => undefined);
+      // Stay under MCP client request timeouts: a slow first sync keeps running in the background.
+      const budget = Number(process.env.SC_SYNC_BUDGET_MS ?? 40_000);
+      let timer: NodeJS.Timeout | undefined;
+      const done = await Promise.race([job.then((r) => r), new Promise<undefined>((r) => (timer = setTimeout(() => r(undefined), budget)))]);
+      clearTimeout(timer);
+      if (!done)
+        return {
+          summary: `Sync of ${wanted.length} feeds is still running in the background after ${Math.round(budget / 1000)} s (some Mitti feeds are slow on first download). Call sc_sync_status in a minute to see progress; analytics will use whatever has arrived and say so.`,
+          data: { feeds: wanted, background: true },
+        };
+      const { reports } = done;
       const ok = reports.filter((r) => !r.error && !r.unavailable);
       const fetched = reports.reduce((n, r) => n + r.fetched, 0);
       const unavailable = reports.filter((r) => r.unavailable).map((r) => r.feed);

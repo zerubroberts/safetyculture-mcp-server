@@ -96,7 +96,7 @@ export interface AnalyticResult<Row = Record<string, unknown>> {
   period?: { from: string; to: string; label: string };
   filters: Record<string, unknown>;
   as_of: string;
-  coverage: Array<Pick<FeedStatus, "feed" | "rows" | "last_synced_at" | "complete">>;
+  coverage: Array<Pick<FeedStatus, "feed" | "rows" | "last_synced_at" | "complete"> & { note?: string }>;
   metrics: Record<string, number | string | null>;
   table: Row[];
   method: string;
