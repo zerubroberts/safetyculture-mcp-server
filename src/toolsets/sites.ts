@@ -66,6 +66,10 @@ interface TreeNode {
 }
 
 const CHILD_PAGE = 200;
+/** ~150 compact nodes stay well under the default 25,000-character result cap. */
+const DEFAULT_MAX_NODES = 150;
+const MAX_NODES_CAP = 1000;
+const FETCH_BATCH = 10;
 
 async function getChildren(ctx: ToolContext, parentId: string): Promise<{ items: ChildEntry[]; truncated: boolean }> {
   const res = await ctx.client.get<{ folders?: ChildEntry[]; next_page_token?: string }>(
@@ -154,13 +158,15 @@ export const sitesTools = [
     toolset: "sites",
     access: "read",
     description:
-      "Returns the site hierarchy as a nested tree. Starts below the given site, or at the top-level sites when omitted. Capped by depth; nodes cut off by the cap are marked truncated.",
+      "Returns the site hierarchy as a nested tree. Starts below the given site, or at the top-level sites when omitted. Capped by depth and by max_nodes (breadth-first, in API order); nodes with children left out are marked truncated, so call again with site_id set to one of them to continue.",
     input: {
       site_id: z.string().optional().describe("Root the tree below this site. Omit to start at the top level."),
       depth: z.number().int().min(0).max(5).optional().describe("Levels of children to include (default 3, max 5)."),
+      max_nodes: z.number().int().min(1).max(MAX_NODES_CAP).optional().describe(`Max sites in the tree, roots included (default ${DEFAULT_MAX_NODES}, max ${MAX_NODES_CAP}).`),
     },
     run: async (a, ctx) => {
       const depth = a.depth ?? 3;
+      const maxNodes = a.max_nodes ?? DEFAULT_MAX_NODES;
       let roots: TreeNode[];
       let rootsTruncated = false;
       if (a.site_id) {
@@ -179,32 +185,54 @@ export const sitesTools = [
           .filter((e) => !(e.ancestors ?? []).length)
           .map((e) => ({ id: e.folder.id, name: e.folder.name, level: e.folder.meta_label }));
       }
+      if (roots.length > maxNodes) {
+        roots = roots.slice(0, maxNodes);
+        rootsTruncated = true;
+      }
+      let budget = maxNodes - roots.length;
+      let capped = false;
       let frontier = roots;
       for (let level = 0; level < depth && frontier.length; level++) {
         const last = level === depth - 1;
-        const fetched = await Promise.all(frontier.map((n) => getChildren(ctx, n.id)));
         const next: TreeNode[] = [];
-        frontier.forEach((node, i) => {
-          const { items, truncated } = fetched[i]!;
-          node.children = items.map((c) => ({
-            id: c.folder.id,
-            name: c.folder.name,
-            level: c.folder.meta_label,
-            children_count: c.children_count,
-          }));
-          if (!last) next.push(...node.children.filter((c, j) => items[j]!.has_children));
-          else
-            node.children.forEach((c, j) => {
-              if (items[j]!.has_children) c.truncated = true;
-            });
-          if (truncated) node.truncated = true;
-        });
+        // Breadth-first in small batches so the node budget stops further fetches deterministically.
+        for (let b = 0; b < frontier.length; b += FETCH_BATCH) {
+          if (budget <= 0) {
+            frontier.slice(b).forEach((n) => (n.truncated = true));
+            capped = true;
+            break;
+          }
+          const batch = frontier.slice(b, b + FETCH_BATCH);
+          const fetched = await Promise.all(batch.map((n) => getChildren(ctx, n.id)));
+          batch.forEach((node, i) => {
+            const { items: all, truncated } = fetched[i]!;
+            const items = all.slice(0, Math.max(0, budget));
+            budget -= items.length;
+            if (items.length < all.length) {
+              node.truncated = true;
+              capped = true;
+            }
+            node.children = items.map((c) => ({
+              id: c.folder.id,
+              name: c.folder.name,
+              level: c.folder.meta_label,
+              children_count: c.children_count,
+            }));
+            if (!last) next.push(...node.children.filter((c, j) => items[j]!.has_children));
+            else
+              node.children.forEach((c, j) => {
+                if (items[j]!.has_children) c.truncated = true;
+              });
+            if (truncated) node.truncated = true;
+          });
+        }
         frontier = next;
       }
       if (depth === 0) roots.forEach((r) => (r.truncated = true));
+      const nodeCount = maxNodes - budget;
       return {
-        summary: `Site tree with ${roots.length} root${roots.length === 1 ? "" : "s"}, ${depth} levels deep.`,
-        data: { roots, roots_truncated: rootsTruncated || undefined },
+        summary: `Site tree with ${roots.length} root${roots.length === 1 ? "" : "s"} and ${nodeCount} site${nodeCount === 1 ? "" : "s"}, ${depth} levels deep.${capped || rootsTruncated ? ` Stopped at ${maxNodes} sites: call again with site_id set to a node marked truncated to see more.` : ""}`,
+        data: { node_count: nodeCount, roots, roots_truncated: rootsTruncated || undefined, node_cap_reached: capped || rootsTruncated || undefined },
         untrusted: true,
       };
     },

@@ -212,7 +212,7 @@ export const trainingTools = [
       const offset = a.page_token ? Number(a.page_token) : undefined;
       if (a.page_token && (!Number.isInteger(offset) || (offset ?? 0) < 0))
         throw new ToolError(`Invalid page_token "${a.page_token}": expected an offset from a previous call.`);
-      const res = await ctx.client.get<{ data?: RawProgress[]; metadata?: { next_page_token?: string } }>(
+      const res = await ctx.client.get<{ data?: RawProgress[]; metadata?: { next_page?: string; next_page_token?: string } }>(
         "/training/v1/feed/training-course-progress",
         {
           courseId: a.course_id,
@@ -224,9 +224,12 @@ export const trainingTools = [
       );
       const rows = (res.data ?? []).map(projectProgress);
       const done = rows.filter((r) => r.completed_at).length;
+      // The feed paginates by offset; its own next_page_token is opaque, so return the next offset instead.
+      const more = Boolean(res.metadata?.next_page_token || res.metadata?.next_page) && rows.length > 0;
+      const nextPageToken = more ? String((offset ?? 0) + rows.length) : undefined;
       return {
-        summary: `${rows.length} progress rows (${done} completed). Analytics data, refreshed every 30 min-2 h.${res.metadata?.next_page_token ? " More available: pass next_page_token." : ""}`,
-        data: { rows, next_page_token: res.metadata?.next_page_token || undefined },
+        summary: `${rows.length} progress rows (${done} completed). Analytics data, refreshed every 30 min-2 h.${nextPageToken ? " More available: pass next_page_token." : ""}`,
+        data: { rows, next_page_token: nextPageToken },
         untrusted: true,
       };
     },
@@ -242,8 +245,12 @@ export const trainingTools = [
     input: {
       leaderboard_id: z.string().optional().describe("Leaderboard ID (omit to list leaderboards)."),
       limit: P.limit(50, 1000),
+      page_token: z.string().optional().describe("Cursor from a previous call's next_page_token to fetch the next page of rankings."),
     },
     run: async (a, ctx) => {
+      const rankingsOffset = a.page_token ? Number(a.page_token) : undefined;
+      if (a.page_token && (!Number.isInteger(rankingsOffset) || (rankingsOffset ?? 0) < 0))
+        throw new ToolError(`Invalid page_token "${a.page_token}": expected the next_page_token from a previous call.`);
       if (!a.leaderboard_id) {
         const res = await ctx.client.get<{
           totalCount?: number;
@@ -263,12 +270,20 @@ export const trainingTools = [
         leaderboardName?: string;
         rankings?: Array<{ rank?: number; participantId?: string; participantName?: string; totalScore?: number; isNotAttempted?: boolean }>;
       }>("/training/individualleaderboards/v1/rankings", { leaderboardId: a.leaderboard_id });
-      const rankings = (res.rankings ?? []).slice(0, a.limit ?? 50);
+      // The rankings endpoint returns every participant in one response; page it locally by offset.
+      const all = res.rankings ?? [];
+      const start = rankingsOffset ?? 0;
+      const rankings = all.slice(start, start + (a.limit ?? 50));
+      const end = start + rankings.length;
+      const nextPageToken = end < all.length ? String(end) : undefined;
       return {
-        summary: `Leaderboard "${res.leaderboardName ?? a.leaderboard_id}": ${rankings.length} ranked participants.`,
+        summary: `Leaderboard "${res.leaderboardName ?? a.leaderboard_id}": ${all.length} ranked participants; showing ${rankings.length}${rankings.length ? ` (positions ${start + 1}-${end})` : ""}.${nextPageToken ? " More available: pass next_page_token." : ""}`,
         data: {
           leaderboard: { id: res.leaderboardId ?? a.leaderboard_id, name: res.leaderboardName },
+          total: all.length,
+          truncated: nextPageToken ? true : undefined,
           rankings: rankings.map((r) => ({ rank: r.rank, participant: r.participantName, participant_id: r.participantId, score: r.totalScore })),
+          next_page_token: nextPageToken,
         },
         untrusted: true,
       };

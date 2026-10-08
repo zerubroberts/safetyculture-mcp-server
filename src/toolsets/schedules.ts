@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { ToolError } from "../core/errors.js";
 import { ids, P } from "../core/params.js";
-import { defineTool } from "../core/registry.js";
+import { defineTool, type ToolContext } from "../core/registry.js";
 import { parsePeriod } from "../core/time.js";
 
 /**
@@ -14,9 +14,13 @@ import { parsePeriod } from "../core/time.js";
  *   `GET /schedules/v1/schedule_items` endpoint.
  * - The current-API feed rows carry no next-due timestamp and no assignee
  *   names (assignee IDs only); legacy items carry `next_occurrence`.
- * - The occurrences feed documents its fields but not the exact
- *   `occurrence_status` enum values, so status filtering is a documented
- *   heuristic (explicit status text first, due/miss timestamps second).
+ * - The occurrences feed documents `occurrence_status` as TODO / IN_PROGRESS /
+ *   COMPLETED / LATE / OVERDUE / MISSED / WONT_DO. Classification uses the
+ *   status text first and due/miss timestamps second. `end_date` is
+ *   inclusive (due on or before), so the exclusive period end is sent minus 1 ms.
+ * - Legacy schedule items have no GET-one, pause, resume or end endpoint;
+ *   tools that take a schedule ID need `source: "legacy"` to look a legacy
+ *   item up (via the list endpoint) or to refuse a write with a clear message.
  */
 
 const reason = z
@@ -120,19 +124,20 @@ interface FeedOccurrence {
   assignee_id?: string;
 }
 
-export type OccurrenceStatus = "missed" | "late" | "completed" | "upcoming" | "open";
+export type OccurrenceStatus = "missed" | "overdue" | "late" | "completed" | "upcoming" | "open";
 
 /**
  * Classifies an occurrence. Prefers the API's own status text; falls back to
- * timestamps (done late -> late, overdue and not done -> missed, due in
- * future and not done -> upcoming). "open" means neither text nor timestamps
- * were conclusive.
+ * timestamps (done late -> late, past due_time and not done -> missed, past
+ * miss_time but before due_time and not done -> overdue, otherwise not done
+ * -> upcoming). "open" means neither text nor timestamps were conclusive.
  */
 export function classifyOccurrence(o: FeedOccurrence, now = new Date()): OccurrenceStatus {
   const raw = (o.occurrence_status ?? "").toLowerCase();
   const done = Boolean(o.completed_at ?? o.audit_id) || raw.includes("complet");
   if (raw.includes("late")) return "late";
   if (raw.includes("miss")) return done ? "late" : "missed";
+  if (raw.includes("overdue")) return "overdue";
   if (done) {
     if (o.completed_at && o.due_time) {
       const c = Date.parse(o.completed_at);
@@ -142,9 +147,12 @@ export function classifyOccurrence(o: FeedOccurrence, now = new Date()): Occurre
     return "completed";
   }
   if (raw.includes("upcoming") || raw.includes("schedul") || raw.includes("pending") || raw.includes("open")) return "upcoming";
-  const due = Date.parse(o.due_time ?? o.miss_time ?? "");
-  if (!Number.isFinite(due)) return "open";
-  return due < now.getTime() ? "missed" : "upcoming";
+  const due = Date.parse(o.due_time ?? "");
+  const miss = Date.parse(o.miss_time ?? "");
+  const t = now.getTime();
+  if (Number.isFinite(due) && due < t) return "missed";
+  if (Number.isFinite(miss) && miss < t) return Number.isFinite(due) ? "overdue" : "missed";
+  return Number.isFinite(due) || Number.isFinite(miss) ? "upcoming" : "open";
 }
 
 function projectFeedSchedule(s: FeedSchedule) {
@@ -195,6 +203,57 @@ function projectOccurrence(o: FeedOccurrence, now: Date) {
 }
 
 const scheduleId = z.string().describe("Schedule ID (from sc_list_schedules).");
+const scheduleSource = z
+  .enum(["schedules", "legacy"])
+  .optional()
+  .describe('The row\'s "source" from sc_list_schedules. Pass "legacy" for legacy schedule items. Default: schedules.');
+
+/** Refuses a change to a legacy schedule item: the legacy API has no pause/resume/end operation. */
+function refuseLegacy(id: string, verb: string): never {
+  throw new ToolError(
+    `Schedule ${id} is a legacy schedule item. The legacy Schedules API cannot ${verb} it; change it in the Mitti web app (Schedules), or migrate it to the current Schedules feature first.`,
+  );
+}
+
+/** Legacy items have no GET-one endpoint: page through the list until the ID is found. */
+async function findLegacyItem(ctx: ToolContext, id: string): Promise<LegacyScheduleItem | undefined> {
+  let token: string | undefined;
+  for (let page = 0; page < 50; page++) {
+    const res = await ctx.client.get<{ items?: LegacyScheduleItem[]; next_page_token?: string }>("/schedules/v1/schedule_items", {
+      page_size: 100,
+      page_token: token,
+    });
+    const hit = (res.items ?? []).find((i) => i.id === id);
+    if (hit) return hit;
+    if (!res.next_page_token || res.next_page_token === token) return undefined;
+    token = res.next_page_token;
+  }
+  return undefined;
+}
+
+/**
+ * Composite cursor for sc_list_schedules: the current feed is drained first,
+ * then the legacy items, each with its own token, so neither list is skipped
+ * and neither API ever receives the other's token.
+ */
+interface ListCursor {
+  phase: "current" | "legacy";
+  token?: string;
+}
+const CURSOR_PREFIX = "sched1.";
+function encodeListCursor(c: ListCursor): string {
+  return CURSOR_PREFIX + Buffer.from(JSON.stringify(c)).toString("base64url");
+}
+function decodeListCursor(token: string): ListCursor {
+  try {
+    if (!token.startsWith(CURSOR_PREFIX)) throw new Error("prefix");
+    const c = JSON.parse(Buffer.from(token.slice(CURSOR_PREFIX.length), "base64url").toString("utf8")) as ListCursor;
+    if ((c.phase !== "current" && c.phase !== "legacy") || (c.token !== undefined && typeof c.token !== "string")) throw new Error("shape");
+    return c;
+  } catch {
+    throw new ToolError(`Invalid page_token "${token}": pass the next_page_token from a previous sc_list_schedules call.`);
+  }
+}
 
 export const schedulesTools = [
   defineTool({
@@ -204,7 +263,7 @@ export const schedulesTools = [
     access: "read",
     core: true,
     description:
-      "Lists inspection schedules from the current Schedules API and, when present, legacy schedule items. Each row is labelled with its source. Rows carry title, template, recurrence in plain English when derivable, assignees, site, status (active/paused/ended) and next due date where the API provides one (legacy items only).",
+      "Lists inspection schedules from the current Schedules API and, when present, legacy schedule items. Each row is labelled with its source. Rows carry title, template, recurrence in plain English when derivable, assignees, site, status (active/paused/ended) and next due date where the API provides one (legacy items only). Current schedules are listed first, then legacy items; pass a row's source to sc_get_schedule.",
     input: {
       status: z.array(scheduleStatus).optional().describe("Filter by status. Default: all statuses."),
       template_ids: P.templateIds,
@@ -214,36 +273,49 @@ export const schedulesTools = [
     run: async (a, ctx) => {
       const limit = a.limit ?? 50;
       const wanted = new Set(a.status ?? []);
-      const feedQuery: Record<string, string | number | boolean | string[] | undefined> = {
-        limit,
-        show_active: !wanted.size || wanted.has("active"),
-        show_finished: !wanted.size || wanted.has("ended"),
-        show_paused: !wanted.size || wanted.has("paused"),
-        template: a.template_ids,
-        next_page_token: a.page_token,
-      };
-      const legacyStatuses = [...wanted].map((s) => (s === "active" ? "ACTIVE" : s === "paused" ? "PAUSED" : "FINISHED"));
-      const [feed, legacy] = await Promise.all([
-        ctx.client.get<{ data?: FeedSchedule[]; metadata?: { next_page_token?: string } }>("/scheduling/v1/feed/schedules", feedQuery),
-        ctx.client
-          .get<{ items?: LegacyScheduleItem[]; next_page_token?: string; total?: number }>("/schedules/v1/schedule_items", {
-            page_size: Math.min(100, limit),
-            page_token: a.page_token,
+      const cursor: ListCursor = a.page_token ? decodeListCursor(a.page_token) : { phase: "current" };
+      let next: ListCursor | undefined;
+      let current: ReturnType<typeof projectFeedSchedule>[] = [];
+      if (cursor.phase === "current") {
+        const feed = await ctx.client.get<{ data?: FeedSchedule[]; metadata?: { next_page_token?: string } }>("/scheduling/v1/feed/schedules", {
+          limit,
+          show_active: !wanted.size || wanted.has("active"),
+          show_finished: !wanted.size || wanted.has("ended"),
+          show_paused: !wanted.size || wanted.has("paused"),
+          template: a.template_ids,
+          next_page_token: cursor.token,
+        });
+        current = (feed.data ?? []).map(projectFeedSchedule);
+        if (feed.metadata?.next_page_token) next = { phase: "current", token: feed.metadata.next_page_token };
+      }
+      // One combined page: legacy items fill whatever room the current feed left.
+      let old: ReturnType<typeof projectLegacyItem>[] = [];
+      let legacyNote = "";
+      const room = limit - current.length;
+      if (!next && room <= 0) next = { phase: "legacy" };
+      else if (!next) {
+        const legacyStatuses = [...wanted].map((s) => (s === "active" ? "ACTIVE" : s === "paused" ? "PAUSED" : "FINISHED"));
+        try {
+          const legacy = await ctx.client.get<{ items?: LegacyScheduleItem[]; next_page_token?: string; total?: number }>("/schedules/v1/schedule_items", {
+            page_size: Math.min(100, room),
+            page_token: cursor.phase === "legacy" ? cursor.token : undefined,
             statuses: legacyStatuses.length ? legacyStatuses : undefined,
-          })
-          .catch((e) => ({ error: e instanceof Error ? e.message : String(e) })),
-      ]);
-      const current = (feed.data ?? []).map(projectFeedSchedule);
-      const old = "items" in legacy ? ((legacy.items ?? []).map(projectLegacyItem)) : [];
-      const legacyNote = "error" in legacy ? ` Legacy items unavailable: ${legacy.error}` : "";
+          });
+          old = (legacy.items ?? []).map(projectLegacyItem);
+          if (legacy.next_page_token) next = { phase: "legacy", token: legacy.next_page_token };
+        } catch (e) {
+          legacyNote = ` Legacy items unavailable: ${e instanceof Error ? e.message : String(e)}`;
+        }
+      }
       const rows = [...current, ...old];
+      const nextToken = next ? encodeListCursor(next) : undefined;
       return {
-        summary: `${current.length} current schedules and ${old.length} legacy schedule items.${legacyNote}${feed.metadata?.next_page_token ? " More available: pass next_page_token." : ""}`,
+        summary: `${current.length} current schedules and ${old.length} legacy schedule items.${legacyNote}${nextToken ? " More available: pass next_page_token." : ""}`,
         data: {
           total_current: current.length,
           total_legacy: old.length,
           schedules: rows,
-          next_page_token: feed.metadata?.next_page_token || undefined,
+          next_page_token: nextToken,
         },
         untrusted: true,
       };
@@ -256,9 +328,15 @@ export const schedulesTools = [
     toolset: "schedules",
     access: "read",
     description:
-      "Gets one schedule in full: title, status, template, recurrence (raw and in plain English), assigned users and groups, target sites/assets summary and creator.",
-    input: { schedule_id: scheduleId },
-    run: async ({ schedule_id }, ctx) => {
+      "Gets one schedule in full: title, status, template, recurrence (raw and in plain English), assigned users and groups, target sites/assets summary and creator. For legacy schedule items pass source \"legacy\".",
+    input: { schedule_id: scheduleId, source: scheduleSource },
+    run: async ({ schedule_id, source }, ctx) => {
+      if (source === "legacy") {
+        const item = await findLegacyItem(ctx, schedule_id);
+        if (!item) throw new ToolError(`Legacy schedule item ${schedule_id} was not found. Check the ID with sc_list_schedules.`);
+        const row = projectLegacyItem(item);
+        return { summary: `Legacy schedule item "${row.title}" is ${row.status}.`, data: row, untrusted: true };
+      }
       const s = await ctx.client.get<{
         id?: string;
         title?: string;
@@ -306,10 +384,13 @@ export const schedulesTools = [
     toolset: "schedules",
     access: "read",
     description:
-      "Lists scheduled inspection occurrences due in a period (default last 30 days), with missed / late / completed / upcoming filters. Rows carry the schedule, due window, status, completed inspection ID and assignee. Occurrence status is derived from the API status text and due timestamps (see tool notes).",
+      "Lists scheduled inspection occurrences due in a period (default last 30 days), with missed / overdue / late / completed / upcoming filters. Rows carry the schedule, due window, status, completed inspection ID and assignee. Occurrence status is derived from the API status text and due timestamps (see tool notes).",
     input: {
       period: P.period("last 30 days"),
-      status: z.array(z.enum(["missed", "late", "completed", "upcoming"])).optional().describe("Only occurrences with these statuses. Default: all."),
+      status: z
+        .array(z.enum(["missed", "overdue", "late", "completed", "upcoming"]))
+        .optional()
+        .describe("Only occurrences with these statuses. overdue = past the overdue time but not yet missed. Default: all."),
       template_ids: P.templateIds,
       limit: P.limit(50, 500),
       page_token: P.pageToken,
@@ -322,7 +403,8 @@ export const schedulesTools = [
           limit: Math.min(1000, a.limit ?? 50),
           template: a.template_ids,
           start_date: p.from.toISOString(),
-          end_date: p.to.toISOString(),
+          // end_date is inclusive ("due on or before"); the period end is exclusive.
+          end_date: new Date(p.to.getTime() - 1).toISOString(),
           next_page_token: a.page_token,
         },
       );
@@ -330,7 +412,7 @@ export const schedulesTools = [
       const wanted = new Set(a.status ?? []);
       const rows = (res.data ?? [])
         .map((o) => projectOccurrence(o, now))
-        .filter((r) => !wanted.size || wanted.has(r.status as "missed" | "late" | "completed" | "upcoming"));
+        .filter((r) => !wanted.size || wanted.has(r.status as "missed" | "overdue" | "late" | "completed" | "upcoming"));
       const counts: Record<string, number> = {};
       for (const r of rows) counts[r.status] = (counts[r.status] ?? 0) + 1;
       return {
@@ -350,11 +432,13 @@ export const schedulesTools = [
       "Pauses an active schedule so it stops generating new occurrences. Existing occurrences are not affected. Pauses the whole schedule unless site_ids or asset_ids narrow it to sub-schedules (one of the two, matching the schedule's target type).",
     input: {
       schedule_id: scheduleId,
+      source: scheduleSource,
       site_ids: z.array(z.string()).max(10_000).optional().describe("Pause only these sites' sub-schedules."),
       asset_ids: z.array(z.string()).max(10_000).optional().describe("Pause only these assets' sub-schedules."),
       reason,
     },
     run: async (a, ctx) => {
+      if (a.source === "legacy") refuseLegacy(a.schedule_id, "pause");
       if (a.site_ids?.length && a.asset_ids?.length) throw new ToolError("Pass either site_ids or asset_ids, not both.");
       await ctx.client.patch(`/scheduling/v1/schedules/${encodeURIComponent(ids.uuid(a.schedule_id))}/pause`, {
         ...(a.site_ids?.length ? { sites: { site_ids: a.site_ids } } : {}),
@@ -375,11 +459,13 @@ export const schedulesTools = [
       "Resumes a paused schedule so it starts generating new occurrences again. Resumes the whole schedule unless site_ids or asset_ids narrow it to sub-schedules (one of the two, matching the schedule's target type). Ended schedules cannot be resumed.",
     input: {
       schedule_id: scheduleId,
+      source: scheduleSource,
       site_ids: z.array(z.string()).max(10_000).optional().describe("Resume only these sites' sub-schedules."),
       asset_ids: z.array(z.string()).max(10_000).optional().describe("Resume only these assets' sub-schedules."),
       reason,
     },
     run: async (a, ctx) => {
+      if (a.source === "legacy") refuseLegacy(a.schedule_id, "resume");
       if (a.site_ids?.length && a.asset_ids?.length) throw new ToolError("Pass either site_ids or asset_ids, not both.");
       await ctx.client.patch(`/scheduling/v1/schedules/${encodeURIComponent(ids.uuid(a.schedule_id))}/resume`, {
         ...(a.site_ids?.length ? { sites: { site_ids: a.site_ids } } : {}),
@@ -397,8 +483,9 @@ export const schedulesTools = [
     access: "destructive",
     description:
       "Ends an active or paused schedule so it stops generating new occurrences. Existing occurrences are not affected. This cannot be undone: ended schedules cannot be reactivated. Pause instead for a temporary stop.",
-    input: { schedule_id: scheduleId, reason },
-    plan: async ({ schedule_id }, ctx) => {
+    input: { schedule_id: scheduleId, source: scheduleSource, reason },
+    plan: async ({ schedule_id, source }, ctx) => {
+      if (source === "legacy") refuseLegacy(schedule_id, "end");
       const s = await ctx.client.get<{
         id?: string;
         title?: string;
@@ -412,7 +499,8 @@ export const schedulesTools = [
         untrusted: true,
       };
     },
-    run: async ({ schedule_id }, ctx) => {
+    run: async ({ schedule_id, source }, ctx) => {
+      if (source === "legacy") refuseLegacy(schedule_id, "end");
       await ctx.client.patch(`/scheduling/v1/schedules/${encodeURIComponent(ids.uuid(schedule_id))}/end`, {});
       return { summary: `Ended schedule ${schedule_id}. It will no longer generate occurrences.`, data: { id: schedule_id, ended: true } };
     },
