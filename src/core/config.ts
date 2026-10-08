@@ -89,7 +89,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, opts: { require
     mode: parsed.data.mode,
     toolsets: toolsetsRaw.length === 0 ? ["default"] : toolsetsRaw.includes("all") ? "all" : toolsetsRaw,
     pii: parsed.data.pii,
-    maxResultChars: Number(env.SC_MAX_RESULT_CHARS ?? 60_000),
+    maxResultChars: Number(env.SC_MAX_RESULT_CHARS ?? 25_000),
     requestsPerSecond: Number(env.SC_REQUESTS_PER_SECOND ?? 8),
     timeoutMs: Number(env.SC_TIMEOUT_MS ?? 30_000),
     maxRetries: Number(env.SC_MAX_RETRIES ?? 4),

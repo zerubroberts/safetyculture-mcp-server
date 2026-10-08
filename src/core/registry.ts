@@ -27,7 +27,7 @@ export const TOOLSETS = {
   contractors: "Contractor companies, company documents and credentials (licences, tickets, expiry)",
   documents: "Documents library: files and folders",
   sensors: "Sensors and readings",
-  webhooks: "Webhooks and signature secret",
+  webhooks: "Webhooks: list, create and delete event subscriptions",
   feeds: "Raw Data Feeds and bulk export to CSV / JSONL",
   analytics: "Computed analytics: trends, Pareto, backlog ageing, compliance, league tables, comparisons, anomalies",
   reports: "Generated reports: executive safety pulse, weekly digest, audit evidence pack (Markdown / HTML)",
@@ -100,11 +100,11 @@ export function selectTools(all: AnyToolSpec[], cfg: Pick<Config, "mode" | "tool
 export function formatResult(result: ToolResult, cfg: Pick<Config, "pii" | "maxResultChars">): string {
   if (result.data === undefined) return redactSecrets(result.summary);
   const clean = sanitize(result.data, cfg.pii);
-  let json = JSON.stringify(clean, null, 1);
+  let json = JSON.stringify(clean);
   let note = "";
   if (json.length > cfg.maxResultChars) {
     const shrunk = shrink(clean, cfg.maxResultChars);
-    json = JSON.stringify(shrunk.value, null, 1);
+    json = JSON.stringify(shrunk.value);
     note = `\n\nNote: output trimmed to fit (${shrunk.note}). Narrow the filters, request a smaller limit, or use an export tool (sc_export_feed) for the full data set.`;
   }
   const body = result.untrusted ? wrapUntrusted(json) : json;
