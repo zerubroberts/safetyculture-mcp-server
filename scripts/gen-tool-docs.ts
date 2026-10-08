@@ -21,8 +21,9 @@ function params(spec: AnyToolSpec): string {
 
 const meta = 2;
 const total = ALL_TOOLS.length + meta;
-const core = ALL_TOOLS.filter((t) => t.core).length + meta;
-const coreRead = ALL_TOOLS.filter((t) => t.core && t.access === "read").length + meta;
+const inDefault = (t: AnyToolSpec) => Boolean(t.core) || t.toolset === "core";
+const core = ALL_TOOLS.filter(inDefault).length + meta;
+const coreRead = ALL_TOOLS.filter((t) => inDefault(t) && t.access === "read").length + meta;
 const by = (a: string) => ALL_TOOLS.filter((t) => t.access === a).length;
 
 const out: string[] = [
