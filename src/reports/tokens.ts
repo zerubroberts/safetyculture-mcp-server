@@ -12,6 +12,8 @@ export const HIVIS = "oklch(0.91 0.2 122)";
 export const HIVIS_DEEP = "oklch(0.55 0.15 128)";
 export const RISK = "oklch(0.58 0.19 27)";
 export const RISK_TINT = "oklch(0.95 0.035 27)";
+/** Risk red for small text on RISK_TINT: about 5.4:1 (RISK itself is 3.97:1 there, below AA for 12px text). */
+export const RISK_TEXT = "oklch(0.48 0.17 27)";
 export const WARN = "oklch(0.8 0.15 80)";
 export const OK = "oklch(0.72 0.17 150)";
 export const PANEL = "oklch(0.2 0.012 250)";

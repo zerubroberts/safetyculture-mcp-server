@@ -6,8 +6,9 @@ import { round } from "../analytics/stats.js";
 import { computeTrend, siteKey, type Grain, type TrendMetric } from "../analytics/trend.js";
 import { computeHotspots } from "../analytics/hotspots.js";
 import { computeInspectorActivity } from "../analytics/inspectors.js";
-import type { Block, Cell, Chart, Report, Section } from "./model.js";
-import { fmt, fmtInstant } from "./model.js";
+import type { ComplianceRow } from "../analytics/schedule-compliance.js";
+import type { BarRow, Block, Cell, Chart, Report, Section, StackedRow } from "./model.js";
+import { MIN_N, fmt, fmtInstant } from "./model.js";
 import { directionPhrase, plural, pulseSentences, trendSeries, unavailableBlock, withSparks } from "./exhibits.js";
 import { backlogSummary, coverageTable, orgFingerprint, overdueActions, pulseSections, scheduleSummary, siteNameMap, topFailedItems } from "./sections.js";
 
@@ -40,8 +41,12 @@ export const gated = (unavailable: string | null, s: Section): Section => (unava
 export interface TrendOpts {
   /** Highlight the bar at this index (others gray). */
   highlight?: number;
-  /** Dashed reference line at the analytic's mean of the fitted buckets. */
-  meanLine?: boolean;
+  /**
+   * The pooled figure for the whole window, as the report's headline analytic computed it (e.g. the pulse's
+   * average score). Shown in the action title and as a dashed reference line. Never the trend's mean of
+   * bucket values: that averages rounded monthly figures with equal weight and disagrees with the headline.
+   */
+  pooled?: { value: number | null; label: string };
   /** Short subject for the action title, e.g. "Weekly inspection volume". */
   subject?: string;
 }
@@ -56,11 +61,12 @@ export function trendChart(cache: CacheReader, metric: TrendMetric, grain: Grain
   }
   const unit = metric === "average_score" || metric === "failed_item_rate" ? "%" : "";
   const subject = opts.subject ?? title;
-  const tail = s.total !== null ? `: ${plural(s.total, "inspection")} in total` : s.mean !== null ? `, averaging ${fmt(s.mean)}${unit}` : "";
-  const countNoun = metric === "inspections_completed" ? tail : s.total !== null ? `: ${fmt(s.total)} in total` : tail;
+  const pooled = opts.pooled && opts.pooled.value !== null ? { value: opts.pooled.value, label: `${opts.pooled.label} ${fmt(opts.pooled.value)}${unit}` } : null;
+  // Counts: the analytic's total. Rates: only the pooled headline figure, never a mean of buckets.
+  const tail = s.total !== null ? `: ${metric === "inspections_completed" ? plural(s.total, "inspection") : fmt(s.total)} in total` : pooled ? `: ${pooled.label.charAt(0).toLowerCase()}${pooled.label.slice(1)}` : "";
   const chart: Chart = {
     kind,
-    title: `${subject} ${directionPhrase(s.direction)}${countNoun}`,
+    title: `${subject} ${directionPhrase(s.direction)}${tail}`,
     subtitle: `${title}. Trend ${s.direction}.`,
     xLabel: grain === "week" ? "Week starting" : "Month",
     yLabel,
@@ -68,10 +74,50 @@ export function trendChart(cache: CacheReader, metric: TrendMetric, grain: Grain
     // Scores sit high, so they keep the 0-100 frame (the renderer zooms it with a break marker); low rates scale to their data.
     yMax: metric === "average_score" ? 100 : undefined,
     highlight: opts.highlight !== undefined && opts.highlight < 0 ? s.labels.length + opts.highlight : opts.highlight,
-    reference: opts.meanLine && s.mean !== null ? { value: s.mean, label: `Mean ${fmt(s.mean)}${unit}` } : undefined,
+    reference: pooled ? { value: pooled.value, label: pooled.label } : undefined,
     points: s.labels.map((label, i) => ({ label, value: s.values[i] ?? null, partial: s.partial[i] })),
   };
   return { kind: "chart", chart };
+}
+
+/** Closed counts every action given a completion date in the period, including "can't do"; completed means status complete. */
+export const CLOSED_NOTE = "completed date in period; includes can't do";
+
+export const TOO_FEW_RESOLVED = `Faded rows: fewer than ${MIN_N} resolved occurrences, too few to rate.`;
+
+/** Lowest-compliance groups as a 100% status mix. Only groups with MIN_N+ resolved occurrences are rated or headlined. */
+export function statusMix(rows: ComplianceRow[], noun: string, take = 8): Block | null {
+  const r = rows.filter((x) => x.resolved > 0).slice(0, take);
+  if (!r.length) return null;
+  const rated = r.find((x) => x.resolved >= MIN_N);
+  return {
+    kind: "stacked",
+    title: rated
+      ? `${rated.group} has the lowest on-time rate of any ${noun} with ${MIN_N}+ resolved: ${rated.compliance_pct ?? "n/a"}% of ${fmt(rated.resolved)}`
+      : `No ${noun} has ${MIN_N} or more resolved occurrences, so none is rated`,
+    subtitle: `Resolved occurrences by outcome per ${noun}, lowest compliance first (bars scaled to 100% of each row)`,
+    percent: true,
+    segments: [
+      { label: "On time", tone: "mid" },
+      { label: "Late", tone: "warn" },
+      { label: "Missed", tone: "risk" },
+    ],
+    rows: r.map((w): StackedRow => ({ label: w.group, values: [w.on_time, w.late, w.missed], muted: w.resolved < MIN_N })),
+    note: r.some((w) => w.resolved < MIN_N) ? TOO_FEW_RESOLVED : undefined,
+  };
+}
+
+export const TOO_FEW_ANSWERS =`Faded bars: fewer than ${MIN_N} answers, too few to give a failure rate.`;
+
+/** A failed-item bar: the failure rate is only quoted with at least MIN_N answers; below that the bar is faded. */
+export function failedBar(r: { label: string; failed: number; answered: number; failure_rate: number | null; template: string }): BarRow {
+  const rated = r.answered >= MIN_N;
+  return {
+    label: r.label,
+    value: r.failed,
+    muted: !rated,
+    note: `${rated && r.failure_rate !== null ? `${r.failure_rate}% of ${fmt(r.answered)} answers` : `${fmt(r.answered)} answers, too few to rate`} · ${r.template}`,
+  };
 }
 
 export function failedItemsBlocks(cache: CacheReader, period: string, siteIds: string[] | undefined, top: number, chart: boolean, now: Date, bars = false): { blocks: Block[]; total: number | null; lead: string | null } {
@@ -79,13 +125,15 @@ export function failedItemsBlocks(cache: CacheReader, period: string, siteIds: s
   if (f.unavailable) return { blocks: [unavailableBlock(f.unavailable)], total: null, lead: null };
   const blocks: Block[] = [];
   const first = f.rows[0];
-  const lead = first ? `"${first.label}" (${first.template}) fails most often: ${plural(first.failed, "failed answer")}, ${first.share ?? "n/a"}% of all failures` : null;
+  // A share of failures is only quoted when there are enough failures behind it (the 20-observation rule).
+  const enoughFailures = (f.totalFailed ?? 0) >= MIN_N;
+  const lead = first ? `"${first.label}" (${first.template}) has the most failed answers: ${fmt(first.failed)}${enoughFailures ? `, ${first.share ?? "n/a"}% of all failures` : ""}` : null;
   if (chart && f.rows.length)
     blocks.push({
       kind: "chart",
       chart: {
         kind: "pareto",
-        title: f.rows.length >= 3 && first ? `The top ${Math.min(3, f.rows.length)} items carry ${f.rows[Math.min(3, f.rows.length) - 1]!.cumulative_share ?? "n/a"}% of all failures` : (lead ?? "Failed items"),
+        title: f.rows.length >= 3 && first && enoughFailures ? `The top ${Math.min(3, f.rows.length)} items carry ${f.rows[Math.min(3, f.rows.length) - 1]!.cumulative_share ?? "n/a"}% of all failures` : (lead ?? "Failed items"),
         subtitle: `Failed answers by item, largest first (${f.totalFailed} failed of ${f.totalAnswered} answered). Dashed line: cumulative share.`,
         xLabel: "Item rank",
         yLabel: "Failed answers",
@@ -99,7 +147,8 @@ export function failedItemsBlocks(cache: CacheReader, period: string, siteIds: s
       title: lead ?? "Failed items",
       subtitle: `Failed answers per item, with failure rate and template; ${f.totalFailed} failed of ${f.totalAnswered} answered`,
       valueLabel: "Failed answers",
-      rows: f.rows.slice(0, 8).map((r) => ({ label: r.label, value: r.failed, note: `${r.failure_rate === null ? "" : `${r.failure_rate}% · `}${r.template}` })),
+      rows: f.rows.slice(0, 8).map((r) => failedBar(r)),
+      note: f.rows.slice(0, 8).some((r) => r.answered < MIN_N) ? TOO_FEW_ANSWERS : undefined,
     });
   blocks.push({
     kind: "table",
@@ -156,7 +205,7 @@ export function overdueBySite(b: ReturnType<typeof backlogSummary>, totalOverdue
   const top = rows[0]!;
   return {
     kind: "bars",
-    title: `${top.group} holds the most overdue actions: ${fmt(top.overdue)} of ${fmt(totalOverdue)}`,
+    title: `${top.group} holds the most overdue actions right now: ${fmt(top.overdue)} of ${fmt(totalOverdue)}`,
     subtitle: "Open actions past their due date, by site (snapshot now)",
     valueLabel: "Overdue",
     rows: rows.map((r) => ({ label: r.group, value: r.overdue, note: `of ${fmt(r.open)} open` })),
@@ -258,8 +307,10 @@ export function buildAuditPack(cache: CacheReader, args: { period?: string; site
   const b = backlogSummary(cache, periodText, args.site_ids, now);
   const { result: hot, summary: hotSummary } = computeHotspots(cache, { period, site_ids: args.site_ids, limit: 15 }, now);
   const sched = scheduleSummary(cache, periodText, args.site_ids, now);
-  const created = computeTrend(cache, { metric: "actions_created", grain: "month", period, site_ids: args.site_ids }, now).result.table;
-  const completed = computeTrend(cache, { metric: "actions_completed", grain: "month", period, site_ids: args.site_ids }, now).result.table;
+  const createdT = computeTrend(cache, { metric: "actions_created", grain: "month", period, site_ids: args.site_ids }, now).result;
+  const completedT = computeTrend(cache, { metric: "actions_completed", grain: "month", period, site_ids: args.site_ids }, now).result;
+  const created = createdT.table;
+  const completed = completedT.table;
   const sm = sched.metrics;
   const noSched = feedProblem(cache, "schedule_occurrences");
   const hasSched = sm.due !== null && !noSched && cache.rows("schedule_occurrences").length > 0;
@@ -280,22 +331,7 @@ export function buildAuditPack(cache: CacheReader, args: { period?: string; site
               { label: "Missed", value: sm.missed_pct as number | null, unit: "%", note: `${sm.missed} occurrences` },
             ],
           },
-          ...(worst.length
-            ? [
-                {
-                  kind: "stacked",
-                  title: `${worst[0]!.group} has the lowest on-time rate: ${worst[0]!.compliance_pct ?? "n/a"}% of ${fmt(worst[0]!.resolved)} resolved`,
-                  subtitle: "Resolved occurrences by outcome, lowest compliance first (bars scaled to 100% of each row)",
-                  percent: true,
-                  segments: [
-                    { label: "On time", tone: "mid" },
-                    { label: "Late", tone: "warn" },
-                    { label: "Missed", tone: "risk" },
-                  ],
-                  rows: worst.slice(0, 8).map((w) => ({ label: w.group, values: [w.on_time, w.late, w.missed] })),
-                } satisfies Block,
-              ]
-            : []),
+          ...[statusMix(worst, "schedule")].filter((x): x is Block => x !== null),
           {
             kind: "table",
             columns: [{ label: "Lowest compliance" }, { label: "Resolved", align: "right" }, { label: "On time", align: "right" }, { label: "Late", align: "right" }, { label: "Missed", align: "right" }],
@@ -329,7 +365,7 @@ export function buildAuditPack(cache: CacheReader, args: { period?: string; site
         title: "Inspection volume and score",
         blocks: [
           trendChart(cache, "inspections_completed", "month", period, args.site_ids, now, "bar", "Inspections completed per month", "Inspections", { subject: "Monthly inspection volume" }),
-          trendChart(cache, "average_score", "month", period, args.site_ids, now, "line", "Average inspection score per month", "Average score", { subject: "The average inspection score", meanLine: true }),
+          trendChart(cache, "average_score", "month", period, args.site_ids, now, "line", "Average inspection score per month", "Average score", { subject: "The average inspection score", pooled: { value: metric(pulse.result.table, "average_score"), label: "Period average" } }),
         ],
       },
       { title: "Failed-item Pareto", intro: "Items ranked by failed answers; the dashed line shows the cumulative share of all failures.", blocks: failed.blocks },
@@ -340,10 +376,10 @@ export function buildAuditPack(cache: CacheReader, args: { period?: string; site
             kind: "kpis",
             tiles: [
               { label: "Open actions", value: bm.open as number, note: "snapshot now" },
-              { label: "Overdue", value: bm.overdue as number, note: `${bm.open_no_due_date} open with no due date` },
+              { label: "Overdue now", value: bm.overdue as number, note: `${bm.open_no_due_date} open with no due date` },
               { label: "Opened in period", value: bm.opened_in_period as number },
-              { label: "Closed in period", value: bm.closed_in_period as number },
-              { label: "Median days to close", value: bm.median_resolution_days as number | null, note: `p90 ${bm.p90_resolution_days ?? "n/a"} days` },
+              { label: "Closed (completed or can't do)", value: bm.closed_in_period as number, note: CLOSED_NOTE },
+              { label: "Median days to close", value: bm.median_resolution_days as number | null, note: `p90 ${bm.p90_resolution_days ?? "n/a"} days, over ${bm.completed_in_period} completed` },
             ],
           },
           ageingBlock(bm),
@@ -351,8 +387,9 @@ export function buildAuditPack(cache: CacheReader, args: { period?: string; site
             kind: "chart",
             chart: {
               kind: "line",
-              title: `${fmt(bm.opened_in_period as number)} actions opened and ${fmt(bm.closed_in_period as number)} closed in the period`,
-              subtitle: "Actions created and completed per month",
+              // Totals from the same trend analytic the lines are drawn from, so title and chart agree.
+              title: `${fmt(createdT.metrics.total as number)} actions created and ${fmt(completedT.metrics.total as number)} completed in the period`,
+              subtitle: "Actions created and completed (status complete) per month; can't-do closures are not counted as completed",
               xLabel: "Month",
               yLabel: "Actions",
               seriesLabel: "completed",
@@ -405,6 +442,7 @@ export function buildAuditPack(cache: CacheReader, args: { period?: string; site
     summary: `Audit pack for ${period.label}: ${countText(inspections, "inspections")}, ${countText(failed.total, "failed answers")}, ${bm.open === null ? "actions unavailable" : `${bm.open} open actions (${bm.overdue} overdue)`}, ${countText(hot.metrics.issues, "issues")}${hasSched ? `, ${sm.compliance_pct ?? "n/a"}% of resolved scheduled inspections on time` : ""}.`,
     metrics: {
       inspections_completed: inspections,
+      average_score: metric(pulse.result.table, "average_score"),
       failed_answers: failed.total,
       open_actions: bm.open ?? null,
       overdue_actions: bm.overdue ?? null,
@@ -447,7 +485,7 @@ export function buildSiteScorecard(cache: CacheReader, args: { site_id: string; 
         title: "Trend",
         blocks: [
           trendChart(cache, "inspections_completed", "month", period, siteIds, now, "bar", "Inspections completed per month", "Inspections", { subject: "Monthly inspection volume" }),
-          trendChart(cache, "failed_item_rate", "month", period, siteIds, now, "line", "Failed-item rate per month", "Failed-item rate", { subject: "The failed-item rate", meanLine: true }),
+          trendChart(cache, "failed_item_rate", "month", period, siteIds, now, "line", "Failed-item rate per month", "Failed-item rate", { subject: "The failed-item rate", pooled: { value: metric(rows, "failed_item_rate"), label: "Period rate" } }),
         ],
       },
       { title: "Top failed items", blocks: failed.blocks },

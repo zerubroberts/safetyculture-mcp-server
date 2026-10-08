@@ -60,8 +60,10 @@ export interface Chart {
   highlight?: number;
   /** Line charts: event markers (a dashed rule with a short label) at point indexes. */
   markers?: Array<{ index: number; label: string }>;
-  /** Horizontal reference line, e.g. the period mean. */
+  /** Horizontal dashed reference line: the pooled period figure from the headline analytic. */
   reference?: { value: number; label: string };
+  /** Horizontal solid target line, only when the caller supplied a target (never invented). */
+  target?: { value: number; label: string };
   /** Label of the main series, printed at its end when a second series is drawn. */
   seriesLabel?: string;
   /** Line charts: a gray comparison series on the same scale, labelled at its end. */
@@ -76,6 +78,8 @@ export interface BarRow {
   note?: string;
   /** "person" when the label is a person's name (pseudonymised at strict privacy). */
   group_kind?: "person";
+  /** Too few observations to rate (below the 20-observation rule): drawn pale, never highlighted. */
+  muted?: boolean;
 }
 
 /** Segment colours: status colours (ok/warn/risk) are always paired with a legend label. */
@@ -93,6 +97,8 @@ export interface StackedRow {
   label: string;
   values: number[];
   group_kind?: "person";
+  /** Too few observations to rate: drawn faded. */
+  muted?: boolean;
 }
 
 export interface DumbbellRow {
@@ -100,6 +106,8 @@ export interface DumbbellRow {
   from: number | null;
   to: number | null;
   group_kind?: "person";
+  /** Too few observations to rate: drawn gray. */
+  muted?: boolean;
 }
 
 export interface BulletRow {
@@ -110,7 +118,12 @@ export interface BulletRow {
   max: number;
   good?: "up" | "down";
   note?: string;
+  /** Caller-supplied target, drawn as a hi-vis tick; absent means no target is shown. */
+  target?: number;
 }
+
+/** Below this many observations a rate is shown faded and never headlined (the pulse's comparison rule). */
+export const MIN_N = 20;
 
 export type Block =
   | { kind: "kpis"; tiles: Tile[] }
@@ -126,7 +139,17 @@ export type Block =
   /** Stacked horizontal bars (status mix). `percent` normalises each row to 100% and prints the row total. */
   | (Exhibit & { kind: "stacked"; segments: Array<{ label: string; tone: Tone }>; rows: StackedRow[]; percent?: boolean; empty?: string })
   /** Two values per entity: previous and current, or expected and actual. */
-  | (Exhibit & { kind: "dumbbell"; fromLabel: string; toLabel: string; unit?: string; good?: "up" | "down"; rows: DumbbellRow[]; empty?: string })
+  | (Exhibit & {
+      kind: "dumbbell";
+      fromLabel: string;
+      toLabel: string;
+      unit?: string;
+      good?: "up" | "down";
+      rows: DumbbellRow[];
+      /** Vertical line at a caller-supplied tolerance or target (absent = none drawn). */
+      target?: { value: number; label: string };
+      empty?: string;
+    })
   /** Entity x period matrix. Colour = intensity; with `good`, a darker cell is a worse one. */
   | (Exhibit & {
       kind: "heatmap";
@@ -150,7 +173,9 @@ export type Block =
       empty?: string;
     })
   /** Bullet bars: a value against a comparison marker (previous period) on a fixed scale. */
-  | (Exhibit & { kind: "bullets"; compareLabel: string; rows: BulletRow[] });
+  | (Exhibit & { kind: "bullets"; compareLabel: string; rows: BulletRow[] })
+  /** Opening brief: three labelled sentences (what changed, what to watch, what we need), built from analytics. */
+  | { kind: "brief"; items: Array<{ label: string; text: string }> };
 
 export interface Section {
   title: string;
@@ -183,6 +208,22 @@ export function fmtInstant(input: Date | string): string {
   if (Number.isNaN(d.getTime())) return String(input);
   const p2 = (n: number) => String(n).padStart(2, "0");
   return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}, ${p2(d.getUTCHours())}:${p2(d.getUTCMinutes())} UTC`;
+}
+
+/** The one human date format used in every report: "2026-09-01" -> "1 Sep 2026". Anything else passes through. */
+export function humanDay(input: string | null | undefined): string {
+  const m = String(input ?? "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${Number(m[3])} ${MONTHS[Number(m[2]) - 1] ?? m[2]} ${m[1]}` : String(input ?? "");
+}
+
+/** Rewrites ISO dates inside a label: "last month (2026-09-01 to 2026-09-30)" -> "last month (1 Sep 2026 to 30 Sep 2026)". */
+export const humanDates = (s: string): string => s.replace(/\b(\d{4}-\d{2}-\d{2})(?:T[\d:.]+Z)?\b/g, (d) => humanDay(d));
+
+/** Long form of a trend bucket for tables: "2026-07-13" -> "13 Jul 2026", "2026-07" -> "Jul 2026". */
+export function humanBucket(label: string): string {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(label)) return humanDay(label);
+  const m = label.match(/^(\d{4})-(\d{2})$/);
+  return m ? `${MONTHS[Number(m[2]) - 1] ?? m[2]} ${m[1]}` : label;
 }
 
 /** Short axis label for a trend bucket: "2026-07-13" -> "13 Jul", "2026-07" -> "Jul 26". Anything else passes through. */

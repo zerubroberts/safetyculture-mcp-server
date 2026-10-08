@@ -1,8 +1,9 @@
-import { fmt, judge, shortBucket, type Block, type Chart } from "./model.js";
+import { fmt, humanDates, judge, shortBucket, type Block, type Chart } from "./model.js";
 import {
   GRAY,
   GRAY_DARK,
   HIVIS,
+  HIVIS_DEEP,
   INK,
   INK_2,
   LINE,
@@ -12,7 +13,7 @@ import {
   RAMP_NEUTRAL,
   RISK,
   TONE,
-  esc,
+  esc as escRaw,
   f1,
   fitText,
   niceMax,
@@ -32,8 +33,14 @@ import {
 export const WIDE = 760;
 export const NARROW = 358;
 
-const TICK = 11.5;
-const LABEL = 12;
+/** Escapes SVG text (labels, tooltips) and writes any ISO date in the report's one human format. */
+const esc = (s: unknown): string => escRaw(humanDates(String(s ?? "")));
+
+// 12px in the 760px layout prints at about 10.9px (8.1pt) on A4 (182mm content width), above the 8pt floor.
+export const TICK = 12;
+export const LABEL = 12;
+/** A4 portrait content width at 96 dpi with 14mm margins: 210mm - 28mm = 182mm. */
+export const A4_CONTENT_PX = (182 / 25.4) * 96;
 const PARTIAL_OPACITY = 0.32;
 
 type Visual = Extract<Block, { kind: "bars" | "stacked" | "dumbbell" | "heatmap" | "multiples" | "bullets" }>;
@@ -71,7 +78,9 @@ const labelCol = (labels: string[], W: number, cap = 0.36) => Math.ceil(Math.min
 
 function barsSvg(b: Extract<Visual, { kind: "bars" }>, W: number): string {
   const unit = b.unit ?? "";
-  const hi = b.highlight ?? 0;
+  // The highlight never lands on a row with too few observations to rate.
+  const want = b.highlight ?? 0;
+  const hi = b.rows[want]?.muted ? -1 : want;
   const pitch = 28;
   const T = 4;
   const valText = (v: number | null) => (finite(v) ? fmt(v, unit) : "n/a");
@@ -90,12 +99,13 @@ function barsSvg(b: Extract<Visual, { kind: "bars" }>, W: number): string {
     const y = T + i * pitch;
     const mid = y + pitch / 2;
     const isHi = i === hi;
-    parts.push(text(0, mid + 4, fitText(r.label, lw, LABEL, isHi), { size: LABEL, fill: INK, weight: isHi ? 600 : undefined, full: r.label }));
+    parts.push(text(0, mid + 4, fitText(r.label, lw, LABEL, isHi), { size: LABEL, fill: r.muted ? INK_2 : INK, weight: isHi ? 600 : undefined, full: r.label }));
     const w = finite(r.value) ? Math.max(r.value > 0 ? 1.5 : 0, (Math.max(0, r.value) / max) * pw) : 0;
-    if (w > 0) parts.push(`<rect x="${L}" y="${f1(mid - 8)}" width="${f1(w)}" height="16" rx="2" fill="${isHi ? INK : GRAY}"><title>${esc(r.label)}: ${esc(valText(r.value))}${r.note ? ` (${esc(r.note)})` : ""}</title></rect>`);
+    const fill = isHi ? INK : r.muted ? TONE.pale.fill : GRAY;
+    if (w > 0) parts.push(`<rect x="${L}" y="${f1(mid - 8)}" width="${f1(w)}" height="16" rx="2" fill="${fill}"${r.muted ? ` stroke="${GRAY}" stroke-dasharray="3 2"` : ""}><title>${esc(r.label)}: ${esc(valText(r.value))}${r.note ? ` (${esc(r.note)})` : ""}</title></rect>`);
     const vx = L + w + 6;
     parts.push(
-      `<text x="${f1(vx)}" y="${f1(mid + 4)}" font-size="${LABEL}" fill="${INK}" font-weight="${isHi ? 650 : 500}">${esc(valText(r.value))}${notes && r.note ? `<tspan fill="${INK_2}" font-weight="400" font-size="${TICK}" dx="6">${esc(r.note)}</tspan>` : ""}</text>`,
+      `<text x="${f1(vx)}" y="${f1(mid + 4)}" font-size="${LABEL}" fill="${r.muted ? INK_2 : INK}" font-weight="${isHi ? 650 : r.muted ? 400 : 500}">${esc(valText(r.value))}${notes && r.note ? `<tspan fill="${INK_2}" font-weight="400" font-size="${TICK}" dx="6">${esc(r.note)}</tspan>` : ""}</text>`,
     );
   });
   parts.push(`<line x1="${L}" x2="${L}" y1="${T}" y2="${H - 4}" stroke="${INK_2}"/>`);
@@ -122,8 +132,12 @@ function stackedSvg(b: Extract<Visual, { kind: "stacked" }>, W: number): string 
     const y = T + i * pitch;
     const mid = y + pitch / 2;
     const total = totals[i]!;
-    parts.push(text(0, mid + 4, fitText(r.label, lw, LABEL), { size: LABEL, fill: INK, full: r.label }));
+    parts.push(text(0, mid + 4, fitText(r.label, lw, LABEL), { size: LABEL, fill: r.muted ? INK_2 : INK, full: r.label }));
     const scale = b.percent ? (total > 0 ? pw / total : 0) : pw / maxTotal;
+    // Rows with too few observations to rate have faded fills (so the eye does not read them as findings);
+    // their counts stay in ink on top of the faded colour so they remain legible.
+    if (r.muted) parts.push(`<g opacity="0.38">`);
+    const labels: string[] = [];
     let x = L;
     r.values.forEach((v, k) => {
       if (!finite(v) || v <= 0) return;
@@ -131,11 +145,13 @@ function stackedSvg(b: Extract<Visual, { kind: "stacked" }>, W: number): string 
       const w = v * scale;
       parts.push(`<rect x="${f1(x)}" y="${f1(mid - 9)}" width="${f1(Math.max(1, w - 1))}" height="18" fill="${TONE[seg.tone].fill}"><title>${esc(r.label)}: ${esc(seg.label)} ${esc(fmt(v))}</title></rect>`);
       const s = fmt(v);
-      if (w - 1 >= textW(s, TICK, true) + 8) parts.push(text(x + (w - 1) / 2, mid + 4, s, { anchor: "middle", fill: TONE[seg.tone].text, weight: 600 }));
+      if (w - 1 >= textW(s, TICK, true) + 8) labels.push(text(x + (w - 1) / 2, mid + 4, s, { anchor: "middle", fill: r.muted ? INK : TONE[seg.tone].text, weight: 600 }));
       x += w;
     });
+    if (r.muted) parts.push(`</g>`);
+    parts.push(...labels);
     if (total === 0) parts.push(text(L, mid + 4, "none", { fill: INK_2 }));
-    parts.push(text(W - R + 8, mid + 4, totText(total), { size: LABEL, fill: INK, weight: 600 }));
+    parts.push(text(W - R + 8, mid + 4, totText(total), { size: LABEL, fill: r.muted ? INK_2 : INK, weight: r.muted ? 400 : 600 }));
   });
   return `${open(W, H, b.title)}${parts.join("")}</svg>`;
 }
@@ -153,14 +169,20 @@ function dumbbellSvg(b: Extract<Visual, { kind: "dumbbell" }>, W: number): strin
   const T = lg.h + 10;
   const pitch = 28;
   const vals = b.rows.flatMap((r) => [r.from, r.to]).filter(finite);
+  if (b.target) vals.push(b.target.value);
   const max = unit === "%" && Math.max(0, ...vals) > 50 ? 100 : niceMax(Math.max(0, ...vals));
-  const valW = Math.max(...b.rows.map((r) => textW(finite(r.to) ? fmt(r.to, unit) : "n/a", LABEL, true)));
+  const labelOf = (r: (typeof b.rows)[number]) => (finite(r.to) ? fmt(r.to, unit) : "n/a");
+  const valW = Math.max(...b.rows.map((r) => textW(labelOf(r), LABEL, true)));
   const R = Math.ceil(valW) + 14;
+  // Rows whose current value is below the previous one carry their label on the left of the filled dot:
+  // reserve that room inside the plot so the label always belongs to the current ("filled") dot.
+  const padL = Math.ceil(Math.max(0, ...b.rows.filter((r) => finite(r.to) && finite(r.from) && r.to! < r.from!).map((r) => textW(labelOf(r), LABEL, true) + 12)));
   let lw = labelCol(b.rows.map((r) => r.label), W, 0.34);
-  if (W - lw - 16 - R < 120) lw = Math.max(60, W - R - 16 - 120);
+  if (W - lw - 16 - R - padL < 100) lw = Math.max(60, W - R - 16 - padL - 100);
   const L = lw + 16;
-  const pw = W - L - R;
-  const x = (v: number) => L + (Math.max(0, v) / max) * pw;
+  const x0 = L + padL;
+  const pw = W - x0 - R;
+  const x = (v: number) => x0 + (Math.max(0, v) / max) * pw;
   const plotBottom = T + b.rows.length * pitch;
   const H = plotBottom + 22;
   const parts: string[] = [lg.svg];
@@ -170,24 +192,29 @@ function dumbbellSvg(b: Extract<Visual, { kind: "dumbbell" }>, W: number): strin
   for (const t of ticks(max, intervals)) {
     const xx = x(t);
     parts.push(`<line x1="${f1(xx)}" x2="${f1(xx)}" y1="${T}" y2="${plotBottom}" stroke="${LINE}"/>`);
-    parts.push(text(xx, plotBottom + 16, `${fmt(t)}${unit}`, { anchor: t === 0 ? "start" : "middle" }));
+    parts.push(text(xx, plotBottom + 16, `${fmt(t)}${unit}`, { anchor: t === 0 && padL < 8 ? "start" : "middle" }));
+  }
+  if (b.target) {
+    const tx = x(b.target.value);
+    parts.push(`<line x1="${f1(tx)}" x2="${f1(tx)}" y1="${T - 4}" y2="${plotBottom}" stroke="${HIVIS_DEEP}" stroke-width="2"/>`);
+    const tw = textW(b.target.label, TICK, true);
+    parts.push(text(tx + tw + 4 > W ? tx - 4 : tx + 4, T - 6, b.target.label, { fill: HIVIS_DEEP, weight: 600, anchor: tx + tw + 4 > W ? "end" : "start" }));
   }
   b.rows.forEach((r, i) => {
     const mid = T + i * pitch + pitch / 2;
-    parts.push(text(0, mid + 4, fitText(r.label, lw, LABEL), { size: LABEL, fill: INK, full: r.label }));
+    parts.push(text(0, mid + 4, fitText(r.label, lw, LABEL), { size: LABEL, fill: r.muted ? INK_2 : INK, full: r.label }));
     const verdict = judge(r.from, r.to, b.good);
-    const color = verdict === "worse" ? RISK : verdict === "better" || !b.good ? INK : GRAY_DARK;
+    const color = r.muted ? GRAY : verdict === "worse" ? RISK : verdict === "better" || !b.good ? INK : GRAY_DARK;
     const tip = `${r.label}: ${b.fromLabel} ${fmt(r.from, unit)}, ${b.toLabel} ${fmt(r.to, unit)}`;
     if (finite(r.from) && finite(r.to)) parts.push(`<line x1="${f1(x(r.from))}" x2="${f1(x(r.to))}" y1="${f1(mid)}" y2="${f1(mid)}" stroke="${color}" stroke-width="3" stroke-linecap="round"/>`);
     if (finite(r.from)) parts.push(`<circle cx="${f1(x(r.from))}" cy="${f1(mid)}" r="5" fill="${PAPER}" stroke="${GRAY_DARK}" stroke-width="2"><title>${esc(tip)}</title></circle>`);
     if (finite(r.to)) parts.push(`<circle cx="${f1(x(r.to))}" cy="${f1(mid)}" r="5.5" fill="${color}"><title>${esc(tip)}</title></circle>`);
     // The value label sits on the outer side of the current dot, so it never reads as the previous value.
-    const label = finite(r.to) ? fmt(r.to, unit) : "n/a";
-    const lw2 = textW(label, LABEL, true);
-    const right = Math.max(finite(r.from) ? x(r.from) : L, finite(r.to) ? x(r.to) : L);
-    const leftOk = finite(r.to) && finite(r.from) && r.to < r.from && x(r.to) - 10 - lw2 >= L;
-    if (leftOk) parts.push(text(x(r.to!) - 10, mid + 4, label, { size: LABEL, fill: color, weight: 600, anchor: "end" }));
-    else parts.push(text(right + 10, mid + 4, label, { size: LABEL, fill: finite(r.to) ? color : INK_2, weight: 600 }));
+    const label = labelOf(r);
+    const right = Math.max(finite(r.from) ? x(r.from) : x0, finite(r.to) ? x(r.to) : x0);
+    const fill = r.muted ? INK_2 : finite(r.to) ? color : INK_2;
+    if (finite(r.to) && finite(r.from) && r.to < r.from) parts.push(text(x(r.to) - 10, mid + 4, label, { size: LABEL, fill, weight: 600, anchor: "end" }));
+    else parts.push(text(right + 10, mid + 4, label, { size: LABEL, fill, weight: 600 }));
   });
   return `${open(W, H, b.title)}${parts.join("")}</svg>`;
 }
@@ -327,6 +354,8 @@ function bulletsSvg(b: Extract<Visual, { kind: "bullets" }>, W: number): string 
     [
       { label: "this period", swatch: `<rect x="0" y="3" width="11" height="5" fill="${INK}"/>` },
       { label: b.compareLabel, swatch: `<line x1="5" x2="5" y1="-1" y2="11" stroke="${INK_2}" stroke-width="2.5"/>` },
+      // Only when the caller supplied a target; nothing is drawn otherwise.
+      ...(b.rows.some((r) => finite(r.target)) ? [{ label: "target", swatch: `<path d="M5 -1l4 6-4 6-4-6z" fill="${HIVIS_DEEP}"/>` }] : []),
     ],
     W,
     0,
@@ -349,6 +378,7 @@ function bulletsSvg(b: Extract<Visual, { kind: "bullets" }>, W: number): string 
     const verdict = judge(r.compare, r.value, r.good);
     if (finite(r.value)) parts.push(`<rect x="${L}" y="${f1(mid - 3.5)}" width="${f1(Math.max(1, x(r.value) - L))}" height="7" fill="${verdict === "worse" ? RISK : INK}"><title>${esc(r.label)}: ${esc(valText(r))}</title></rect>`);
     if (finite(r.compare)) parts.push(`<line x1="${f1(x(r.compare))}" x2="${f1(x(r.compare))}" y1="${f1(mid - 11)}" y2="${f1(mid + 11)}" stroke="${INK_2}" stroke-width="2.5"><title>${esc(b.compareLabel)}: ${esc(fmt(r.compare, r.unit ?? ""))}</title></line>`);
+    if (finite(r.target)) parts.push(`<path d="M${f1(x(r.target))} ${f1(mid - 13)}l5 7-5 7-5-7z" fill="${HIVIS_DEEP}" stroke="${PAPER}" stroke-width="1"><title>target: ${esc(fmt(r.target, r.unit ?? ""))}</title></path>`);
     parts.push(
       `<text x="${f1(W - R + 10)}" y="${f1(mid + 4)}" font-size="${LABEL}" fill="${verdict === "worse" ? RISK : INK}" font-weight="650">${esc(valText(r))}${r.note ? `<tspan fill="${INK_2}" font-weight="400" font-size="${TICK}" dx="6">${esc(r.note)}</tspan>` : ""}</text>`,
     );
@@ -383,10 +413,11 @@ export function chartSvg(c: Chart, W = WIDE): string {
   const unit = c.unit ?? "";
   const vals = c.points.map((p) => p.value).filter(finite);
   const s2 = c.series2?.values ?? [];
-  const yMax = c.yMax ?? niceMax(Math.max(0, ...vals, ...s2.filter(finite)));
+  const tgt = c.target && finite(c.target.value) ? [c.target.value] : [];
+  const yMax = c.yMax ?? niceMax(Math.max(0, ...vals, ...s2.filter(finite), ...tgt));
   // Lines of a percentage that sits high (scores) get a zoomed axis with an explicit break marker;
-  // bars always start at zero.
-  const vMin = Math.min(...vals, ...s2.filter(finite));
+  // bars always start at zero. A target stays inside the zoomed window.
+  const vMin = Math.min(...vals, ...s2.filter(finite), ...tgt);
   // Spans paired with interval counts that give round ticks (step 2, 5, 10 or 10).
   const zoom = c.kind === "line" && unit === "%" && yMax === 100 && vals.length ? [{ s: 10, k: 5 }, { s: 20, k: 4 }, { s: 30, k: 3 }, { s: 40, k: 4 }, { s: 50, k: 5 }].find((z) => 100 - z.s <= vMin - 2) : undefined;
   const span = zoom?.s;
@@ -439,6 +470,11 @@ export function chartSvg(c: Chart, W = WIDE): string {
     const yy = y(c.reference.value);
     parts.push(`<line x1="${L}" x2="${W - R}" y1="${f1(yy)}" y2="${f1(yy)}" stroke="${INK_2}" stroke-dasharray="5 4"/>`);
     parts.push(`<text x="${L + 4}" y="${f1(yy - 5)}" font-size="${TICK}" fill="${INK_2}" paint-order="stroke" stroke="${PAPER}" stroke-width="3">${esc(c.reference.label)}</text>`);
+  }
+  if (c.target && finite(c.target.value)) {
+    const yy = y(c.target.value);
+    parts.push(`<line x1="${L}" x2="${W - R}" y1="${f1(yy)}" y2="${f1(yy)}" stroke="${HIVIS_DEEP}" stroke-width="2"/>`);
+    parts.push(`<text x="${W - R - 4}" y="${f1(yy - 5)}" text-anchor="end" font-size="${TICK}" font-weight="600" fill="${HIVIS_DEEP}" paint-order="stroke" stroke="${PAPER}" stroke-width="3">${esc(c.target.label)}</text>`);
   }
   for (const m of c.markers ?? []) {
     if (m.index < 0 || m.index >= n) continue;
