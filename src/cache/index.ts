@@ -31,6 +31,8 @@ export function createCacheProvider(ctx: Ctx): CacheProvider {
   // One in-flight sync per feed, shared by every caller, so a slow first sync started by one
   // tool call keeps running in the background and later calls simply wait for it again.
   const inFlight = new Map<FeedName, Promise<unknown>>();
+  const lastAttempt = new Map<FeedName, number>();
+  const RETRY_BACKOFF_MS = 10 * 60_000;
   const budgetMs = Number(process.env.SC_SYNC_BUDGET_MS ?? 40_000);
 
   return {
@@ -39,10 +41,14 @@ export function createCacheProvider(ctx: Ctx): CacheProvider {
       const store = await open();
       const maxAgeMs = (opts.maxAgeMinutes ?? 60) * 60_000;
       const now = ctx.now().getTime();
+      // A feed whose last attempt failed or was refused is not retried for 10 minutes, so an
+      // unlicensed or capped feed does not trigger a fresh pull on every analytics call.
       const stale = store
         .details(feeds)
         .filter((s) => !s.last_synced_at || now - Date.parse(s.last_synced_at) > maxAgeMs)
+        .filter((s) => now - (lastAttempt.get(s.feed) ?? 0) > RETRY_BACKOFF_MS)
         .map((s) => s.feed);
+      for (const f of stale) lastAttempt.set(f, now);
       const running = stale.map((feed) => {
         let p = inFlight.get(feed);
         if (!p) {
