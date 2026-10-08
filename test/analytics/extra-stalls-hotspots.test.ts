@@ -20,9 +20,9 @@ const A3 = "33333333-3333-4333-8333-333333333333";
 function stallCache() {
   return new FakeCache()
     .seed("actions", [
-      action(A1, { priority: "High", status: "Complete", created: "2026-09-01T00:00:00.000Z", completed: "2026-09-21T00:00:00.000Z" }),
-      action(A2, { priority: "Medium", status: "To do", created: "2026-09-28T12:00:00.000Z" }),
-      action(A3, { priority: "Low", status: "In Progress", site: "site-2", created: "2026-08-01T12:00:00.000Z" }),
+      action(A1, { priority: "HIGH", status: "COMPLETE", created: "2026-09-01T00:00:00.000Z", completed: "2026-09-21T00:00:00.000Z" }),
+      action(A2, { priority: "MEDIUM", status: "TODO", created: "2026-09-28T12:00:00.000Z" }),
+      action(A3, { priority: "LOW", status: "IN_PROGRESS", site: "site-2", created: "2026-08-01T12:00:00.000Z" }),
     ])
     .seed("action_timeline_items", [
       timeline(A1, "TASK_CREATED", "2026-09-01T00:00:00.000Z"),

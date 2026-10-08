@@ -1,7 +1,7 @@
 import { z } from "zod";
+import type { FeedName } from "../cache/contract.js";
 import { P } from "../core/params.js";
 import { defineTool, type AnyToolSpec, type ToolResult } from "../core/registry.js";
-import { parsePeriod } from "../core/time.js";
 import { pseudonym } from "../security/redact.js";
 import { buildAuditPack, buildSafetyPulse, buildSiteScorecard, type Built } from "../reports/build.js";
 import { writeReport } from "../reports/write.js";
@@ -19,6 +19,8 @@ async function finish(built: Built, exportDir: string, slug: string, now: Date):
   };
 }
 
+const REPORT_FEEDS: FeedName[] = ["inspections", "inspection_items", "actions", "issues", "schedule_occurrences", "schedules", "schedule_assignees", "sites", "templates", "users"];
+
 export const reportsTools: AnyToolSpec[] = [
   defineTool({
     name: "sc_report_safety_pulse",
@@ -33,8 +35,8 @@ export const reportsTools: AnyToolSpec[] = [
     },
     run: async (a, ctx) => {
       const now = ctx.now();
-      const cache = await ctx.cache.ensure(["inspections", "inspection_items", "actions", "issues", "schedule_occurrences", "sites", "templates"]);
-      const built = buildSafetyPulse(cache, { period: parsePeriod(a.period, now, "last 7 days"), site_ids: a.site_ids }, now);
+      const cache = await ctx.cache.ensure(REPORT_FEEDS);
+      const built = buildSafetyPulse(cache, { period: a.period, site_ids: a.site_ids }, now);
       return finish(built, ctx.config.exportDir, "safety-pulse", now);
     },
   }),
@@ -52,8 +54,8 @@ export const reportsTools: AnyToolSpec[] = [
     },
     run: async (a, ctx) => {
       const now = ctx.now();
-      const cache = await ctx.cache.ensure(["inspections", "inspection_items", "actions", "issues", "schedule_occurrences", "sites", "templates"]);
-      const built = buildAuditPack(cache, { period: parsePeriod(a.period, now, "last 12 months"), site_ids: a.site_ids }, now);
+      const cache = await ctx.cache.ensure(REPORT_FEEDS);
+      const built = buildAuditPack(cache, { period: a.period, site_ids: a.site_ids }, now);
       return finish(built, ctx.config.exportDir, "audit-pack", now);
     },
   }),
@@ -71,9 +73,9 @@ export const reportsTools: AnyToolSpec[] = [
     },
     run: async (a, ctx) => {
       const now = ctx.now();
-      const cache = await ctx.cache.ensure(["inspections", "inspection_items", "actions", "issues", "sites", "users"]);
+      const cache = await ctx.cache.ensure(REPORT_FEEDS);
       const person = ctx.config.pii === "strict" ? (n: string) => pseudonym(n, "person") : undefined;
-      const built = buildSiteScorecard(cache, { site_id: a.site_id, period: parsePeriod(a.period, now, "last 6 months") }, now, { person });
+      const built = buildSiteScorecard(cache, { site_id: a.site_id, period: a.period }, now, { person });
       return finish(built, ctx.config.exportDir, "site-scorecard", now);
     },
   }),

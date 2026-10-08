@@ -7,7 +7,7 @@ import {
   FAILABLE_TYPES,
   FREE_TEXT_TYPES,
   completedInspections,
-  isAnswered,
+  hasResponse,
   isFailed,
   isNA,
   isPresented,
@@ -93,7 +93,7 @@ export function computeTemplateQuality(cache: CacheReader, args: TemplateQuality
       }
       a.types.set(i.type, (a.types.get(i.type) ?? 0) + 1);
       a.presented++;
-      const answered = isAnswered(i);
+      const answered = hasResponse(i);
       if (answered) a.answered++;
       if (isFailed(i)) a.failed++;
       if (isNA(i)) a.na++;
@@ -122,7 +122,8 @@ export function computeTemplateQuality(cache: CacheReader, args: TemplateQuality
 
   const table: TemplateItemRow[] = [...acc.values()].map((a) => {
     const type = [...a.types.entries()].sort((x, y) => y[1] - x[1])[0]![0];
-    const failRate = pct(a.failed, a.answered, 1);
+    // Fail rate only for pass/fail-capable types (core FAILABLE_TYPES); other types cannot fail.
+    const failRate = FAILABLE_TYPES.has(type) ? pct(a.failed, a.answered, 1) : null;
     const naRate = pct(a.na, a.answered, 1);
     const skipRate = a.judgeable > 0 ? pct(a.blank, a.judgeable, 1) : null;
     let bucket: TemplateItemRow["bucket"] = "keep";
@@ -195,7 +196,7 @@ export function computeTemplateQuality(cache: CacheReader, args: TemplateQuality
     table,
     method:
       `Per item (normalised label within the template), over completed inspections in the period. Fail rate = failed / answered; N/A rate = responses "N/A", "NA" or "not applicable" / answered; skip rate = blank / times shown outside conditional logic. ` +
-      `"Cut candidate": answered >= ${CUT_MIN_ANSWERED} times and never failed (pass/fail-type questions only), or N/A every time (>= ${MIN_EVIDENCE} answers). "Fix": skip or N/A rate >= ${FIX_RATE}% (>= ${MIN_EVIDENCE} showings). Everything else "keep". Duration is the feed's duration field, read as seconds.`,
+      `"Cut candidate": answered >= ${CUT_MIN_ANSWERED} times and never failed (question and list items only, the core failable types), or N/A every time (>= ${MIN_EVIDENCE} answers). "Fix": skip or N/A rate >= ${FIX_RATE}% (>= ${MIN_EVIDENCE} showings). Everything else "keep". Duration is the feed's duration field, read as seconds.`,
     caveats,
     now,
   });

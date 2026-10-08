@@ -102,7 +102,7 @@ describe("computeTrend", () => {
     expect(result.table[0]).toMatchObject({ value: 85, n: 2 });
   });
 
-  it("failed-item rate = failed / answered, ignoring blanks, sections and inactive items", () => {
+  it("failed-item rate = failed / answered (core: question/list only), ignoring text, blanks, sections and inactive items", () => {
     const c = new FakeCache()
       .seed("inspections", [insp("audit_f1", { tpl: "template_t1", completed: "2026-09-02T00:00:00.000Z" })])
       .seed("inspection_items", [
@@ -115,15 +115,15 @@ describe("computeTrend", () => {
         item("audit_f1", "Hidden", { inactive: true, response: "No", failed: true }),
       ]);
     const { result } = computeTrend(c, { metric: "failed_item_rate", grain: "month", period: parsePeriod("2026-09", NOW) }, NOW);
-    expect(result.table[0]).toMatchObject({ value: 25, n: 4 });
+    expect(result.table[0]).toMatchObject({ value: 33.3, n: 3 });
   });
 
   it("issues and actions by their own dates and scope", () => {
     const c = new FakeCache()
       .seed("issues", [issue("i1", { created: "2026-09-02T00:00:00Z" }), issue("i2", { created: "2026-09-03T00:00:00Z", site: "site-2" }), issue("i3", { created: "2026-08-03T00:00:00Z" })])
       .seed("actions", [
-        action("a1", { created: "2026-09-01T00:00:00Z", completed: "2026-09-05T00:00:00Z", status: "Complete" }),
-        action("a2", { created: "2026-08-01T00:00:00Z", completed: "2026-09-06T00:00:00Z", status: "Complete" }),
+        action("a1", { created: "2026-09-01T00:00:00Z", completed: "2026-09-05T00:00:00Z", status: "COMPLETE" }),
+        action("a2", { created: "2026-08-01T00:00:00Z", completed: "2026-09-06T00:00:00Z", status: "COMPLETE" }),
         action("a3", { created: "2026-09-10T00:00:00Z" }),
       ]);
     const sep = parsePeriod("2026-09", NOW);

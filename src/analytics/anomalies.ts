@@ -48,7 +48,7 @@ const base = (k: AnomalyKind, i: Insp, reason: string, evidence: AnomalyRow["evi
   inspection_name: i.name,
   template_id: i.templateId,
   template_name: i.templateName,
-  inspector_id: i.ownerKey,
+  inspector_id: i.ownerId,
   inspector_name: i.ownerName,
   completed_at: new Date(i.completedAt).toISOString(),
   reason,

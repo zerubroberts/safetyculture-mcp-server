@@ -84,7 +84,7 @@ export function computeInspectorActivity(cache: CacheReader, args: InspectorArgs
     const rate = pct(failed, answered, 1);
     const exp = answered > 0 ? round((100 * expected) / answered, 1) : null;
     table.push({
-      inspector_id: owner || "(unknown)",
+      inspector_id: arr[0]!.ownerId ?? "(unknown)",
       inspector_name: arr.find((i) => i.ownerName)?.ownerName ?? userNames.get(owner) ?? (owner || "(unknown)"),
       inspections: arr.length,
       templates: new Set(arr.map((i) => i.templateKey)).size,

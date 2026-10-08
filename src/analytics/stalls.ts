@@ -3,7 +3,7 @@ import { links } from "../core/params.js";
 import type { Period } from "../core/time.js";
 import { buildResult, groupBy, str } from "./common.js";
 import { median, round, sum } from "./stats.js";
-import { CLOSED_STATUSES, DAY_MS, actionPriority, actionStatus, inWindow, siteSet, siteKey, toTime, uuidKey } from "./trend.js";
+import { CLOSED_STATUSES, DAY_MS, actionPriority, actionStatus, inWindow, isOpenAction, siteSet, siteKey, toTime, uuidKey } from "./trend.js";
 
 /**
  * Where actions stall, from the action timeline feed.
@@ -33,6 +33,7 @@ export interface StallRow {
   ref?: string;
   title?: string;
   status?: string;
+  open: boolean;
   priority: string;
   created_at?: string;
   days_open: number;
@@ -118,7 +119,7 @@ export function computeStalls(cache: CacheReader, args: StallArgs, now: Date) {
     const created = toTime(a.created_at);
     if (created === undefined) continue;
     const current = actionStatus(a.status);
-    const closed = current ? CLOSED_STATUSES.has(current) : Boolean(toTime(a.completed_at));
+    const closed = !isOpenAction(a);
     const events = (timeline.get(uuidKey(a.id) ?? "") ?? [])
       .map((e) => ({ t: toTime(e.timestamp), kind: kindOf(e.item_type), data: e.item_data }))
       .filter((e): e is { t: number; kind: string; data: unknown } => e.t !== undefined)
@@ -168,6 +169,7 @@ export function computeStalls(cache: CacheReader, args: StallArgs, now: Date) {
       ref: str(a.unique_id),
       title: str(a.title),
       status: current,
+      open: !closed,
       priority: actionPriority(a.priority),
       created_at: new Date(created).toISOString(),
       days_open: round((end - created) / DAY_MS, 1)!,
@@ -212,7 +214,7 @@ export function computeStalls(cache: CacheReader, args: StallArgs, now: Date) {
     feeds: ["actions", "action_timeline_items"],
     metrics: {
       actions: rows.length,
-      open: rows.filter((r) => !CLOSED_STATUSES.has(r.status ?? "")).length,
+      open: rows.filter((r) => r.open).length,
       median_longest_gap_days: rows.length ? round(median(rows.map((r) => r.longest_gap_days)), 1) : null,
       with_due_date_changes: rows.filter((r) => r.due_date_changes > 0).length,
       with_reassignments: rows.filter((r) => r.reassignments > 0).length,

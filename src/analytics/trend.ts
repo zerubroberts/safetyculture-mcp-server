@@ -1,13 +1,17 @@
 import type { CacheReader } from "../cache/contract.js";
-import { ACTION_PRIORITY, ACTION_STATUS } from "../toolsets/actions.js";
-import { ids } from "../core/params.js";
 import type { Period } from "../core/time.js";
 import { bool, buildResult, num, str } from "./common.js";
+import { FAILABLE_TYPES, canon, isAnswered as coreIsAnswered, isFailed as coreIsFailed, normLabel as coreNormLabel } from "./failed-items.js";
+import { isResolved, normPriority, normStatus, toAction } from "./backlog.js";
 import { mean, pct, round } from "./stats.js";
 
 /**
  * Inspection trend over time, plus the row-normalisation helpers shared by the extended analytics
  * (template quality, inspector activity, anomalies, stalls, hotspots) and the reports.
+ *
+ * Definitions are delegated to the core analytics so numbers match the core tools exactly:
+ * ID matching = canon() and answered / failed items = isAnswered() / isFailed() from failed-items.ts;
+ * action status, priority, open and resolved = normStatus / normPriority / toAction / isResolved from backlog.ts.
  *
  * Field names relied on (confirmed with scripts/api-ref.mjs and docs/api-shapes.md):
  *   inspections: id, archived, owner_id, owner_name, score_percentage, max_score, duration, site_id,
@@ -19,18 +23,19 @@ import { mean, pct, round } from "./stats.js";
  */
 
 export const DAY_MS = 86_400_000;
+export { FAILABLE_TYPES };
 
-// ---------- key normalisation (feeds disagree on prefixed vs bare IDs) ----------
+// ---------- key normalisation: the core canon() (prefix-free, dash-free, lower case) ----------
 
-const keyOf = (fn: (s: string) => string) => (v: unknown): string | undefined => {
+const keyOf = (v: unknown): string | undefined => {
   const s = str(v)?.trim();
-  return s ? fn(s).toLowerCase() : undefined;
+  return s ? canon(s) : undefined;
 };
-export const auditKey = keyOf(ids.audit);
-export const templateKey = keyOf(ids.template);
-export const userKey = keyOf(ids.user);
-export const siteKey = keyOf(ids.uuid);
-export const uuidKey = keyOf(ids.uuid);
+export const auditKey = keyOf;
+export const templateKey = keyOf;
+export const userKey = keyOf;
+export const siteKey = keyOf;
+export const uuidKey = keyOf;
 
 export const toTime = (v: unknown): number | undefined => {
   const s = str(v);
@@ -47,10 +52,9 @@ export interface ScopeFilter {
   site_ids?: string[];
   template_ids?: string[];
 }
-const keySet = (vals: string[] | undefined, fn: (v: unknown) => string | undefined) =>
-  vals?.length ? new Set(vals.map((v) => fn(v)).filter((v): v is string => Boolean(v))) : undefined;
-export const siteSet = (vals?: string[]) => keySet(vals, siteKey);
-export const templateSet = (vals?: string[]) => keySet(vals, templateKey);
+const keySet = (vals?: string[]) => (vals?.length ? new Set(vals.map(keyOf).filter((v): v is string => Boolean(v))) : undefined);
+export const siteSet = keySet;
+export const templateSet = keySet;
 
 // ---------- inspections ----------
 
@@ -64,6 +68,7 @@ export interface Insp {
   siteKey?: string;
   siteId?: string;
   ownerKey?: string;
+  ownerId?: string;
   ownerName?: string;
   startedAt?: number;
   completedAt: number;
@@ -90,6 +95,7 @@ export function toInsp(r: Record<string, unknown>): Insp | undefined {
     siteKey: siteKey(r.site_id),
     siteId: str(r.site_id),
     ownerKey: userKey(r.owner_id),
+    ownerId: str(r.owner_id),
     ownerName: str(r.owner_name),
     startedAt: toTime(r.date_started),
     completedAt,
@@ -98,7 +104,7 @@ export function toInsp(r: Record<string, unknown>): Insp | undefined {
   };
 }
 
-/** Completed, non-archived inspections, optionally limited to a time window and site/template scope. */
+/** Completed, non-archived inspections (same rule as the core completedInspections), optionally windowed and scoped. */
 export function completedInspections(cache: CacheReader, window?: { from: number; to: number }, scope: ScopeFilter = {}): Insp[] {
   const sites = siteSet(scope.site_ids);
   const tpls = templateSet(scope.template_ids);
@@ -116,14 +122,13 @@ export function completedInspections(cache: CacheReader, window?: { from: number
 
 // ---------- inspection items ----------
 
-/** Item types that are containers or static content, never answered. */
+/** Item types that are containers or static content, never answered (used for presence / skip analysis only). */
 export const STRUCTURAL_TYPES = new Set(["section", "category", "information", "smartfield", "dynamicfield", "primeelement"]);
-/** Item types whose answers can be marked as failed (question / multiple-choice list / checkbox). */
-export const FAILABLE_TYPES = new Set(["question", "list", "checkbox"]);
 export const FREE_TEXT_TYPES = new Set(["text", "textsingle"]);
 export const CONDITIONAL_PARENT_TYPES = new Set(["smartfield", "dynamicfield"]);
 
 export interface Item {
+  raw: Record<string, unknown>;
   auditKey: string;
   itemId?: string;
   parentId?: string;
@@ -132,18 +137,18 @@ export interface Item {
   labelKey: string;
   category?: string;
   response: string;
-  failed: boolean;
   inactive: boolean;
   repeated: boolean;
 }
 
-export const normLabel = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase();
+export const normLabel = (s: string) => coreNormLabel(s);
 
 export function toItem(r: Record<string, unknown>): Item | undefined {
   const a = auditKey(r.audit_id);
   if (!a) return undefined;
   const label = str(r.label) ?? "";
   return {
+    raw: r,
     auditKey: a,
     itemId: str(r.item_id),
     parentId: str(r.parent_id),
@@ -152,20 +157,21 @@ export function toItem(r: Record<string, unknown>): Item | undefined {
     labelKey: normLabel(label),
     category: str(r.category),
     response: str(r.response) ?? "",
-    failed: bool(r.is_failed_response),
     inactive: bool(r.inactive),
     repeated: Boolean(str(r.primeelement_id)),
   };
 }
 
-/** Shown to the inspector and capable of holding an answer. */
+/** Shown to the inspector and capable of holding an answer (any type). */
 export const isPresented = (i: Item) => !i.inactive && !STRUCTURAL_TYPES.has(i.type);
-/** Presented and has a non-blank response. */
-export const isAnswered = (i: Item) => isPresented(i) && i.response.trim() !== "";
-/** Answered with a response the template marks as failed. */
-export const isFailed = (i: Item) => isAnswered(i) && i.failed;
+/** Presented and has a non-blank response, any item type (template hygiene only). */
+export const hasResponse = (i: Item) => isPresented(i) && i.response.trim() !== "";
+/** Core definition: active pass/fail-capable item (question, list) with a response. The failed-item rate denominator. */
+export const isAnswered = (i: Item) => coreIsAnswered(i.raw);
+/** Core definition: answered and flagged is_failed_response. */
+export const isFailed = (i: Item) => coreIsFailed(i.raw);
 const NA = new Set(["n/a", "na", "not applicable"]);
-export const isNA = (i: Item) => isAnswered(i) && NA.has(i.response.trim().toLowerCase());
+export const isNA = (i: Item) => hasResponse(i) && NA.has(i.response.trim().toLowerCase());
 
 /** Items grouped by normalised inspection key, only for the given inspections. */
 export function itemsByInspection(cache: CacheReader, inspKeys: Set<string>): Map<string, Item[]> {
@@ -180,7 +186,7 @@ export function itemsByInspection(cache: CacheReader, inspKeys: Set<string>): Ma
   return out;
 }
 
-/** Answered and failed item counts per inspection. */
+/** Answered and failed item counts per inspection (core definitions). */
 export function itemCounts(items: Map<string, Item[]>): Map<string, { answered: number; failed: number }> {
   const out = new Map<string, { answered: number; failed: number }>();
   for (const [k, arr] of items) {
@@ -195,40 +201,17 @@ export function itemCounts(items: Map<string, Item[]>): Map<string, { answered: 
   return out;
 }
 
-// ---------- actions and issues ----------
+// ---------- actions and issues (core normStatus / normPriority / toAction) ----------
 
-export type ActionStatusName = "to_do" | "in_progress" | "complete" | "cant_do";
-const STATUS_BY_ID = new Map<string, ActionStatusName>(Object.entries(ACTION_STATUS).map(([k, v]) => [v, k as ActionStatusName]));
-const PRIORITY_BY_ID = new Map<string, string>(Object.entries(ACTION_PRIORITY).map(([k, v]) => [v, k]));
-
-/** Friendly status from a feed value (label such as "To do" / "Can't do", key, or system status UUID). */
-export function actionStatus(v: unknown): string | undefined {
-  const s = str(v)?.trim();
-  if (!s) return undefined;
-  const byId = STATUS_BY_ID.get(s.toLowerCase());
-  if (byId) return byId;
-  const k = s.toLowerCase().replace(/['’]/g, "").replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
-  if (k === "todo" || k === "to_do" || k === "open") return "to_do";
-  if (k === "inprogress" || k === "in_progress") return "in_progress";
-  if (k === "complete" || k === "completed" || k === "done" || k === "closed") return "complete";
-  if (k === "cant_do" || k === "cannot_do" || k === "cantdo" || k === "wont_do") return "cant_do";
-  return k;
-}
-export function actionPriority(v: unknown): string {
-  const s = str(v)?.trim();
-  if (!s) return "none";
-  const byId = PRIORITY_BY_ID.get(s.toLowerCase());
-  if (byId) return byId;
-  const k = s.toLowerCase().replace(/[^a-z]+/g, "_").replace(/^_|_$/g, "");
-  return k || "none";
-}
+/** Friendly status: to_do, in_progress, complete, cant_do or unknown (core normStatus). */
+export const actionStatus = (v: unknown): string => normStatus(v);
+/** high, medium, low, none or other (core normPriority). */
+export const actionPriority = (v: unknown): string => normPriority(v);
 export const CLOSED_STATUSES = new Set(["complete", "cant_do"]);
-/** Open = not complete and not "can't do". An action with completed_at but no status is treated as closed. */
-export const isOpenAction = (r: Record<string, unknown>) => {
-  const s = actionStatus(r.status);
-  if (s) return !CLOSED_STATUSES.has(s);
-  return !toTime(r.completed_at);
-};
+/** Core rule: status decides; an unrecognised status is open only when there is no completion date. */
+export const isOpenAction = (r: Record<string, unknown>) => toAction(r).open;
+/** Core rule for "completed" counts: completion date and status complete (or unrecognised). */
+export const isResolvedAction = (r: Record<string, unknown>) => isResolved(toAction(r));
 
 export function inScope(r: Record<string, unknown>, sites?: Set<string>, tpls?: Set<string>): boolean {
   if (sites) {
@@ -364,7 +347,7 @@ export function measurer(cache: CacheReader, metric: TrendMetric, scope: ScopeFi
   }
   const feed = metric === "issues_created" ? "issues" : "actions";
   const dateField = metric === "actions_completed" ? "completed_at" : "created_at";
-  const rows = cache.rows(feed).filter((r) => inScope(r, sites, tpls));
+  const rows = cache.rows(feed).filter((r) => inScope(r, sites, tpls) && (metric !== "actions_completed" || isResolvedAction(r)));
   const times = rows.map((r) => toTime(r[dateField])).filter((t): t is number => t !== undefined);
   const allCreated = cache.rows(feed).map((r) => toTime(r.created_at)).filter((t): t is number => t !== undefined);
   return {
@@ -465,8 +448,8 @@ const METHOD: Record<TrendMetric, string> = {
   inspections_completed: "Count of non-archived inspections by date_completed.",
   average_score: "Mean score_percentage of completed, non-archived inspections that are scored (max_score > 0); n = scored inspections.",
   failed_item_rate:
-    "Failed items / answered items x 100 for inspections completed in the bucket. Answered = active, non-structural item with a non-blank response; n = answered items.",
+    "Failed items / answered items x 100 for inspections completed in the bucket. Answered = active question or list item with a non-blank response (the core failed-items definition); n = answered items.",
   issues_created: "Count of issues by created_at.",
   actions_created: "Count of actions by created_at.",
-  actions_completed: "Count of actions by completed_at.",
+  actions_completed: "Count of completed actions (status complete, as in the core backlog) by completed_at.",
 };

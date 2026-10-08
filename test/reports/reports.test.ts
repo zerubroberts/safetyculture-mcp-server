@@ -3,14 +3,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import type { ToolContext } from "../../src/core/registry.js";
-import { parsePeriod } from "../../src/core/time.js";
 import { reportsTools } from "../../src/toolsets/reports.js";
 import { analyticsExtraTools } from "../../src/toolsets/analytics-extra.js";
 import { buildAuditPack, buildSafetyPulse, buildSiteScorecard } from "../../src/reports/build.js";
 import { esc } from "../../src/reports/html.js";
 import { mdEsc } from "../../src/reports/markdown.js";
 import { fmt } from "../../src/reports/model.js";
-import { kpiTiles, scheduleSummary } from "../../src/reports/sections.js";
+import { pulseSections, scheduleSummary } from "../../src/reports/sections.js";
 import { FakeCache } from "../helpers/fake-cache.js";
 import { NOW, action, insp, issue, item, site } from "./fixtures.js";
 
@@ -39,9 +38,9 @@ function cache() {
     .seed("templates", [{ id: "template_t1", name: `Pre-start ${EVIL}`, organisation_id: "role_demo-org-0001" }])
     .seed("users", [])
     .seed("actions", [
-      action("a-1", { title: `Fix guard ${EVIL}`, priority: "High", created: "2026-09-01T00:00:00Z", due: "2026-09-20T00:00:00Z" }),
-      action("a-2", { title: "Replace sign", priority: "Low", created: "2026-10-01T00:00:00Z", due: "2026-12-01T00:00:00Z" }),
-      action("a-3", { title: "Done one", status: "Complete", created: "2026-09-01T00:00:00Z", completed: "2026-09-04T00:00:00Z" }),
+      action("a-1", { title: `Fix guard ${EVIL}`, priority: "HIGH", created: "2026-09-01T00:00:00Z", due: "2026-09-20T00:00:00Z" }),
+      action("a-2", { title: "Replace sign", priority: "LOW", created: "2026-10-01T00:00:00Z", due: "2026-12-01T00:00:00Z" }),
+      action("a-3", { title: "Done one", status: "COMPLETE", created: "2026-09-01T00:00:00Z", completed: "2026-09-04T00:00:00Z" }),
     ])
     .seed("issues", [issue("i-1", { category: `Slip ${EVIL}`, created: "2026-10-03T00:00:00Z", priority: "High", title: `Wet floor ${EVIL}` })])
     .seed("schedule_occurrences", [
@@ -79,9 +78,9 @@ describe("escaping and formatting", () => {
   });
 });
 
-describe("report sections", () => {
+describe("report sections (core analytics underneath)", () => {
   it("KPI deltas only with >= 20 observations in both periods", () => {
-    const k = kpiTiles(cache(), parsePeriod("last 7 days", NOW), {}, NOW);
+    const k = pulseSections(cache(), "last 7 days", undefined, NOW);
     const t = (l: string) => k.tiles.find((x) => x.label === l)!;
     expect(t("Inspections completed")).toMatchObject({ value: 25, previous: 20, delta: 5 });
     expect(t("Failed-item rate")).toMatchObject({ value: 25, previous: 0, delta: 25 });
@@ -89,41 +88,41 @@ describe("report sections", () => {
     expect(t("Issues reported")).toMatchObject({ value: 1, delta: null });
     expect(t("Issues reported").note).toContain("too few to compare");
     expect(t("Open overdue actions")).toMatchObject({ value: 1 });
-    expect(t("Open overdue actions").note).toContain("oldest 18 days overdue");
+    expect(t("Open overdue actions").note).toContain("most overdue 18 days");
+    // tiles carry exactly the core pulse numbers
+    expect(k.tiles.map((x) => x.value)).toEqual(k.pulse.result.table.map((r) => r.current));
   });
 
-  it("schedule compliance from occurrence status", () => {
-    const s = scheduleSummary(cache(), parsePeriod("last 7 days", NOW))!;
-    expect(s.due).toBe(4);
-    expect(s.on_time_pct).toBe(50);
-    expect(s.late_pct).toBe(25);
-    expect(s.missed_pct).toBe(25);
-    expect(scheduleSummary(new FakeCache().seed("schedule_occurrences", []), parsePeriod("last 7 days", NOW))).toBeNull();
+  it("schedule compliance from the core analytic", () => {
+    const s = scheduleSummary(cache(), "last 7 days", undefined, NOW);
+    expect(s.metrics).toMatchObject({ due: 4, on_time: 2, late: 1, missed: 1, compliance_pct: 50, late_pct: 25, missed_pct: 25 });
+    expect(scheduleSummary(new FakeCache().seed("schedule_occurrences", []), "last 7 days", undefined, NOW).metrics.due).toBeNull();
   });
 
-  it("pulse attention list is ordered by severity", () => {
-    const b = buildSafetyPulse(cache(), { period: parsePeriod("last 7 days", NOW) }, NOW);
+  it("pulse attention list is the core top three, by severity", () => {
+    const b = buildSafetyPulse(cache(), { period: "last 7 days" }, NOW);
     const list = b.report.sections[0]!.blocks[0] as { kind: "list"; items: Array<{ text: string; href?: string }> };
-    expect(list.items.map((i) => i.text)).toEqual([
-      `High-priority action "Fix guard ${EVIL}" at Depot ${EVIL} is 18 days overdue.`,
-      `1 missed scheduled inspection of Pre-start ${EVIL}.`,
-      `Failed-item rate on "Pre-start ${EVIL}" rose 25 pp (0% to 25%).`,
-      `New high-priority issue "Wet floor ${EVIL}" at Demo Depot.`,
-    ]);
+    expect(list.items).toHaveLength(3);
+    expect(list.items[0]!.text).toBe(`High-priority action "Fix guard ${EVIL}" is 18 days overdue.`);
     expect(list.items[0]!.href).toBe("https://app.safetyculture.com/actions/a-1");
-    expect(b.metrics).toMatchObject({ inspections_completed: 25, failed_item_rate: 25, overdue_actions: 1, attention_items: 4 });
+    expect(list.items[1]!.text).toContain("missed on template");
+    expect(list.items[2]!.text).toContain("rose 25 points");
+    expect(b.metrics).toMatchObject({ inspections_completed: 25, failed_item_rate: 25, overdue_actions: 1, attention_items: 3 });
   });
 
-  it("audit pack reports schedule compliance only without a site scope", () => {
-    const all = buildAuditPack(cache(), { period: parsePeriod("last 12 months", NOW) }, NOW);
-    expect(all.metrics).toMatchObject({ inspections_completed: 45, open_actions: 2, overdue_actions: 1, schedule_on_time_pct: 50 });
-    const scoped = buildAuditPack(cache(), { period: parsePeriod("last 12 months", NOW), site_ids: ["site-1"] }, NOW);
+  it("audit pack figures", () => {
+    const all = buildAuditPack(cache(), { period: "last 12 months" }, NOW);
+    expect(all.metrics).toMatchObject({ inspections_completed: 45, failed_answers: 25, open_actions: 2, overdue_actions: 1, issues: 1, schedule_on_time_pct: 50 });
+    // occurrences carry no site here, so a site-scoped pack cannot attribute them
+    const scoped = buildAuditPack(cache(), { period: "last 12 months", site_ids: ["site-1"] }, NOW);
     expect(scoped.metrics.schedule_on_time_pct).toBeNull();
-    expect(JSON.stringify(scoped.report)).toContain("Schedule occurrences carry no site");
+    expect(JSON.stringify(scoped.report)).toContain("could not be tied to a single site");
+    const empty = buildAuditPack(cache().seed("schedule_occurrences", []), { period: "last 12 months" }, NOW);
+    expect(JSON.stringify(empty.report)).toContain("No scheduling data in the cache");
   });
 
   it("site scorecard pseudonymises inspector names when asked", () => {
-    const b = buildSiteScorecard(cache(), { site_id: "site-1", period: parsePeriod("last 6 months", NOW) }, NOW, { person: () => "person_x" });
+    const b = buildSiteScorecard(cache(), { site_id: "site-1", period: "last 6 months" }, NOW, { person: () => "person_x" });
     const s = JSON.stringify(b.report);
     expect(s).toContain("person_x");
     expect(s).not.toContain("Alex ");
