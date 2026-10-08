@@ -59,3 +59,18 @@ describe("untrusted envelope", () => {
     expect(w.match(/<\/untrusted-data>/g)).toHaveLength(1);
   });
 });
+
+describe("phone masking does not eat dates or ids", () => {
+  it("keeps dates, timestamps, numbers; masks phone-shaped text", () => {
+    const out = sanitize(
+      { expiry: "2026-10-08", ts: "2026-10-08T03:00:00Z", au: "08/10/2026", n: "1234567890", score: "87.5", note: "call +61 400 123 456 or (03) 9123 4567" },
+      "contact",
+    );
+    expect(out.expiry).toBe("2026-10-08");
+    expect(out.ts).toBe("2026-10-08T03:00:00Z");
+    expect(out.au).toBe("08/10/2026");
+    expect(out.n).toBe("1234567890");
+    expect(out.score).toBe("87.5");
+    expect(out.note).toBe("call [phone] or [phone]");
+  });
+});

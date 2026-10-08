@@ -8,7 +8,7 @@ coverage/
 .safetyculture-mcp/
 audit.jsonl
 .cache/
-exports/
+/exports/
 # Never commit captured API responses. Test fixtures must be synthetic.
 captures/
 *.har

@@ -67,11 +67,23 @@ export function pseudonym(value: string, kind: string): string {
   return `${kind}_${h}`;
 }
 
+/**
+ * Free-text phone detection is deliberately conservative: dates, timestamps, plain numeric IDs
+ * and decimals must survive. Phone *fields* are masked by key name regardless (see CONTACT_KEYS).
+ */
+function looksLikePhone(m: string): boolean {
+  const digits = m.replace(/\D/g, "");
+  if (digits.length < 8 || digits.length > 15) return false;
+  if (/^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}/.test(m) || /^\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}/.test(m)) return false; // dates
+  if (/^\d+(\.\d+)?$/.test(m)) return false; // bare numbers / IDs / decimals
+  return m.startsWith("+") || /^[(0]/.test(m) || /\d[\s().]\d/.test(m);
+}
+
 function maskString(s: string, pii: PiiLevel): string {
   let out = redactSecrets(s);
   if (pii !== "none") {
     out = out.replace(EMAIL, (m) => pseudonym(m, "email"));
-    out = out.replace(PHONE, (m) => (m.replace(/\D/g, "").length >= 8 ? "[phone]" : m));
+    out = out.replace(PHONE, (m) => (looksLikePhone(m) ? "[phone]" : m));
   }
   return out;
 }
