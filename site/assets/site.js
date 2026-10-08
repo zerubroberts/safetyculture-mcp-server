@@ -147,8 +147,21 @@
   }
 
   if (stage && items.length) {
-    mm.add("(min-width: 1024px) and (min-height: 700px)", function () {
+    mm.add("(min-width: 1024px) and (min-height: 760px)", function () {
       ask.classList.add("is-pinned");
+      // Only pin when every step's panel fits on screen; otherwise keep the static list so no
+      // content is ever hidden behind a pin (short laptop screens).
+      var header = document.querySelector(".site-header").offsetHeight;
+      var tallest = 0;
+      for (var s = 0; s < items.length; s++) {
+        setActive(s);
+        tallest = Math.max(tallest, pinEl.offsetHeight);
+      }
+      if (tallest + header + 24 > window.innerHeight) {
+        ask.classList.remove("is-pinned");
+        items.forEach(function (it) { it.classList.remove("is-active"); });
+        return;
+      }
       setActive(0);
       var n = items.length;
       var st = ScrollTrigger.create({

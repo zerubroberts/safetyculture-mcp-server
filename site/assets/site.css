@@ -316,7 +316,8 @@ mark {
   .ptable th, .ptable td { padding: 7px 8px; }
   .ptable thead th { font-size: 0.6875rem; letter-spacing: 0; }
   .bar { display: none; }
-  .verdict { white-space: normal; }
+  .verdict { white-space: nowrap; }
+  .ptable th .sub { white-space: nowrap; }
   .dir-full { display: none; }
   .dir-short { display: inline; }
 }
@@ -519,7 +520,8 @@ mark {
 .tablist [role="tab"]:focus-visible { outline-offset: -4px; box-shadow: inset 0 -3px 0 var(--hivis); }
 @media (max-width: 599px) {
   .tablist { flex-wrap: wrap; overflow-x: visible; }
-  .tablist [role="tab"] { flex: 1 1 auto; }
+  .tablist { justify-content: flex-start; }
+  .tablist [role="tab"] { flex: 0 0 auto; min-height: 44px; }
 }
 .tabpanel { padding: 24px; }
 .tabpanel + .tabpanel { border-top: 1px solid var(--line); }
