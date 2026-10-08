@@ -108,13 +108,15 @@ export function analyzeCompare(cache: CacheReader, args: CompareArgs, now: Date)
     explanation: explain(title, unit, av, bv, an, bn, r, labels),
   });
   // Measures from an unreadable feed are left out (never tested on zeros).
-  const noItems = feedProblem(cache, "inspection_items");
+  const noInsp = feedProblem(cache, "inspections");
+  const noItems = noInsp ?? feedProblem(cache, "inspection_items");
   const noActions = feedProblem(cache, "actions");
   const fRow = noItems ? undefined : mk("failed_item_rate", "Failed-item rate", "%", pct(a.failed, a.answered, 2), pct(b.failed, b.answered, 2), a.answered, b.answered, fr);
-  const sRow = mk("average_score", "Average inspection score", "%", round(mean(a.scores), 1), round(mean(b.scores), 1), a.scores.length, b.scores.length, sc);
+  const sRow = noInsp ? undefined : mk("average_score", "Average inspection score", "%", round(mean(a.scores), 1), round(mean(b.scores), 1), a.scores.length, b.scores.length, sc);
   const rRow = noActions ? undefined : mk("action_resolution_days", "Median action resolution", " days", round(median(a.res), 1), round(median(b.res), 1), a.res.length, b.res.length, rs);
   const table: CompareRow[] = [fRow, sRow, rRow].filter((r): r is CompareRow => r !== undefined);
   const caveats: string[] = [];
+  if (noInsp) caveats.push(`Average inspection score is not compared: ${noInsp}.`);
   if (noItems) caveats.push(`Failed-item rate is not compared: ${noItems}.`);
   if (noActions) caveats.push(`Action resolution is not compared: ${noActions}.`);
 
@@ -151,10 +153,12 @@ export function analyzeCompare(cache: CacheReader, args: CompareArgs, now: Date)
   });
   const parts = [
     fRow ? `failed-item rate ${fRow.a_value ?? "n/a"}% vs ${fRow.b_value ?? "n/a"}% (${fr.verdict})` : "",
-    `average score ${sRow.a_value ?? "n/a"}% vs ${sRow.b_value ?? "n/a"}% (${sc.verdict})`,
+    sRow ? `average score ${sRow.a_value ?? "n/a"}% vs ${sRow.b_value ?? "n/a"}% (${sc.verdict})` : "",
     rRow ? `median resolution ${rRow.a_value ?? "n/a"} vs ${rRow.b_value ?? "n/a"} days (${rs.verdict})` : "",
   ].filter(Boolean);
   const gaps = [noItems ? unavailableSentence(" Failed-item figures", noItems) : "", noActions ? unavailableSentence(" Action figures", noActions) : ""].join("");
-  const summary = `${A.label} (${a.inspections} inspections) vs ${B.label} (${b.inspections} inspections): ${parts.join(", ")}.${gaps}`;
+  const summary = noInsp
+    ? `${A.label} vs ${B.label}: ${unavailableSentence("Inspection figures", noInsp)}${gaps}`
+    : `${A.label} (${a.inspections} inspections) vs ${B.label} (${b.inspections} inspections): ${parts.join(", ")}.${gaps}`;
   return { summary, result };
 }

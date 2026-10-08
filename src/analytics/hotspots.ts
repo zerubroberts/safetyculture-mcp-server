@@ -77,7 +77,9 @@ export function computeHotspots(cache: CacheReader, args: HotspotArgs, now: Date
     }
     c.issues++;
   }
-  for (const c of cells.values()) c.per_100_inspections = c.site_inspections > 0 ? round((100 * c.issues) / c.site_inspections, 1) : null;
+  // Unreadable inspections feed: per-inspection rates are unknown, not zero or infinite.
+  const noInsp = feedProblem(cache, "inspections");
+  for (const c of cells.values()) c.per_100_inspections = !noInsp && c.site_inspections > 0 ? round((100 * c.issues) / c.site_inspections, 1) : null;
   const table = [...cells.values()].sort((a, b) => b.issues - a.issues || (b.per_100_inspections ?? -1) - (a.per_100_inspections ?? -1) || a.category.localeCompare(b.category) || a.site_name.localeCompare(b.site_name));
 
   const catCount = (rows: Record<string, unknown>[]) => {
@@ -97,7 +99,8 @@ export function computeHotspots(cache: CacheReader, args: HotspotArgs, now: Date
 
   const caveats = ["Lower issue counts can mean less reporting, not fewer hazards; higher counts at a site can reflect a strong reporting culture."];
   if (cur.some((r) => !siteKey(r.site_id))) caveats.push(`${cur.filter((r) => !siteKey(r.site_id)).length} issues have no site and cannot be normalised by inspections.`);
-  if (!inspPerSite.size) caveats.push("No completed inspections in scope for this period, so per-inspection rates are unavailable.");
+  if (noInsp) caveats.push(`Per-inspection rates are unavailable: ${noInsp}.`);
+  else if (!inspPerSite.size) caveats.push("No completed inspections in scope for this period, so per-inspection rates are unavailable.");
 
   const result = buildResult({
     version: HOTSPOTS_VERSION,

@@ -367,7 +367,9 @@ export function computeTrend(cache: CacheReader, args: TrendArgs, now: Date) {
 
   // The metric's feed cannot be read: no buckets, no trend (empty buckets would read as zeros).
   const sourceFeed: FeedName | undefined = metric === "issues_created" ? "issues" : metric.startsWith("actions") ? "actions" : metric === "failed_item_rate" ? "inspection_items" : undefined;
-  const problem = sourceFeed ? feedProblem(cache, sourceFeed) : null;
+  // Inspection-based metrics (and the failed-item rate) also need the inspections feed itself.
+  const needsInspections = !(metric === "issues_created" || metric.startsWith("actions"));
+  const problem = (needsInspections ? feedProblem(cache, "inspections") : null) ?? (sourceFeed ? feedProblem(cache, sourceFeed) : null);
   if (problem) {
     const result = buildResult<TrendRow>({
       version: "trend/1",
